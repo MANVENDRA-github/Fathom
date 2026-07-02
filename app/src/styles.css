@@ -1,0 +1,49 @@
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; height: 100%; }
+body {
+  background: #04050a; overflow: hidden; color: #cdd6f4;
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+#gpu-canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+
+.panel {
+  position: fixed; z-index: 10; background: rgba(8, 10, 20, 0.66);
+  border: 1px solid rgba(120, 160, 255, 0.18); border-radius: 12px; backdrop-filter: blur(7px);
+}
+
+#hud { top: 22px; left: 22px; padding: 16px 18px; width: 300px; }
+#hud h1 { margin: 0; font-size: 15px; letter-spacing: 1px; color: #89dceb; }
+#hud .tag { color: #7f849c; font-size: 11px; margin: 2px 0 12px; }
+.src {
+  display: inline-block; margin-bottom: 12px; padding: 2px 8px; border-radius: 999px; font-size: 10px;
+  background: rgba(64, 160, 90, 0.16); border: 1px solid #40a05a; color: #a6e3a1;
+}
+.src.synthetic { background: rgba(200, 160, 40, 0.16); border-color: #d0a828; color: #f9e2af; }
+.src.live { background: rgba(64, 160, 90, 0.18); border-color: #40c060; color: #a6e3a1; }
+.src.connecting { background: rgba(200, 160, 40, 0.16); border-color: #d0a828; color: #f9e2af; }
+.metric { display: flex; justify-content: space-between; align-items: baseline; padding: 3px 0; }
+.metric .k { color: #7f849c; }
+.metric .v { font-size: 18px; color: #f9e2af; font-variant-numeric: tabular-nums; }
+
+.title-r { top: 22px; right: 22px; padding: 12px 16px; text-align: right; max-width: 340px; }
+.title-r .big { font-size: 15px; color: #cdd6f4; letter-spacing: 0.5px; }
+.title-r .small { color: #7f849c; font-size: 11px; margin-top: 4px; }
+
+.legend { bottom: 22px; left: 22px; padding: 12px 16px; }
+.legend .row { display: flex; align-items: center; gap: 8px; padding: 2px 0; color: #bac2de; }
+.legend .dot { width: 10px; height: 10px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
+
+.controls { bottom: 22px; right: 22px; padding: 10px 12px; display: flex; gap: 6px; }
+.controls button {
+  font: inherit; color: #cdd6f4; background: rgba(70, 90, 160, 0.25);
+  border: 1px solid rgba(120, 160, 255, 0.3); border-radius: 6px; padding: 4px 10px; cursor: pointer;
+}
+.controls button:hover { background: rgba(90, 120, 210, 0.4); }
+.controls button.active { background: #7aa2f7; color: #10131f; border-color: #7aa2f7; }
+
+#timeline { position: fixed; left: 22px; right: 22px; bottom: 0; height: 3px; background: rgba(120, 160, 255, 0.12); z-index: 10; }
+#playhead { height: 100%; width: 0; background: linear-gradient(90deg, #3f7fff, #19ffb0); box-shadow: 0 0 10px #19ffb0; }
+
+.err { position: fixed; inset: 0; display: grid; place-items: center; z-index: 20; background: #04050a; padding: 40px; }
+.err div { max-width: 520px; color: #f38ba8; text-align: center; }
