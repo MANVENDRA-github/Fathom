@@ -88,7 +88,7 @@ node ≥ 20 · python 3 (static serve) · system Chrome/Edge with WebGPU · Play
 (uses installed Chrome, no browser download). Dev machine has an Intel UHD + NVIDIA RTX 4070.
 
 ## Status & next
-Perf: **GO**. Cinema: **working**. **M0 + M1 done** (branch `feat/m0-scaffold`): cinema is a Vite+React+TS app
+Perf: **GO**. Cinema: **working**. **M0 + M1 done** (on `main`): cinema is a Vite+React+TS app
 (`app/`, raw-WebGPU core in modules); perf spike in `spike/` (still GO); **live server (`server/`) shipped** —
 generic OTLP receiver + SSE, proven end-to-end incl. the real sentinel gateway exporting OTLP (`PROOF.md` §3–4).
 Still missing (v1): **M2 drill-down** (flare → span), M3 3D cost flame graph, M4 richness (bloom/curl-noise),
