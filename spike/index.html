@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Fathom — WebGPU span-river feasibility spike</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #05060c; overflow: hidden;
+    font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #cdd6f4; }
+  #gpu-canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+  #hud { position: fixed; top: 14px; left: 14px; z-index: 10; padding: 14px 16px;
+    background: rgba(10, 12, 22, 0.72); border: 1px solid rgba(120, 160, 255, 0.22);
+    border-radius: 10px; backdrop-filter: blur(6px); max-width: 340px; }
+  #hud h1 { margin: 0 0 8px; font-size: 14px; letter-spacing: 0.5px; color: #89dceb; }
+  #hud .sub { color: #7f849c; margin-bottom: 10px; font-size: 11px; }
+  .row { display: flex; justify-content: space-between; gap: 12px; padding: 1px 0; }
+  .row .k { color: #7f849c; }
+  .row .v { color: #a6e3a1; font-variant-numeric: tabular-nums; }
+  .big { font-size: 20px; color: #f9e2af; }
+  #controls { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+  button { font: inherit; color: #cdd6f4; background: rgba(70, 90, 160, 0.25);
+    border: 1px solid rgba(120, 160, 255, 0.3); border-radius: 6px; padding: 4px 8px; cursor: pointer; }
+  button:hover { background: rgba(90, 120, 210, 0.4); }
+  button.active { background: #7aa2f7; color: #10131f; border-color: #7aa2f7; }
+  #verdict { margin-top: 12px; padding: 8px 10px; border-radius: 8px; font-weight: 700;
+    display: none; letter-spacing: 0.3px; }
+  #verdict.go { display: block; background: rgba(64, 160, 90, 0.2); border: 1px solid #40a05a; color: #a6e3a1; }
+  #verdict.lod { display: block; background: rgba(200, 160, 40, 0.18); border: 1px solid #d0a828; color: #f9e2af; }
+  #verdict.rethink { display: block; background: rgba(200, 60, 70, 0.18); border: 1px solid #d04050; color: #f38ba8; }
+  #results { margin-top: 10px; border-collapse: collapse; width: 100%; font-size: 11px; display: none; }
+  #results th, #results td { text-align: right; padding: 2px 6px; border-bottom: 1px solid rgba(120,160,255,0.12); }
+  #results th:first-child, #results td:first-child { text-align: left; }
+  #results .pass { color: #a6e3a1; } #results .fail { color: #f38ba8; }
+  #err { position: fixed; inset: 0; display: none; place-items: center; z-index: 20; padding: 40px;
+    background: #05060c; text-align: center; }
+  #err div { max-width: 520px; color: #f38ba8; }
+  .legend { margin-top: 8px; font-size: 11px; color: #7f849c; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+</style>
+</head>
+<body>
+<canvas id="gpu-canvas"></canvas>
+
+<div id="hud">
+  <h1>FATHOM · span-river spike</h1>
+  <div class="sub" id="gpu-name">initializing WebGPU…</div>
+  <div class="row"><span class="k">particles</span><span class="v big" id="m-count">—</span></div>
+  <div class="row"><span class="k">fps (sustained)</span><span class="v big" id="m-fps">—</span></div>
+  <div class="row"><span class="k">frame time</span><span class="v" id="m-frame">— ms</span></div>
+  <div class="row"><span class="k">GPU time / frame</span><span class="v" id="m-gpu">— ms</span></div>
+  <div class="legend">
+    <span class="dot" style="background:#3f7fff"></span>span
+    <span class="dot" style="background:#19ffb0"></span>cache-hit fork
+    <span class="dot" style="background:#ff2633"></span>PII flare
+  </div>
+  <div id="controls">
+    <button data-count="100000">100k</button>
+    <button data-count="250000">250k</button>
+    <button data-count="500000">500k</button>
+    <button data-count="1000000">1M</button>
+    <button data-count="2000000">2M</button>
+    <button id="sweep-btn">▶ Auto-sweep</button>
+  </div>
+  <div id="verdict"></div>
+  <table id="results">
+    <thead><tr><th>count</th><th>fps</th><th>frame ms</th><th>GPU ms</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<div id="err"><div id="err-msg"></div></div>
+
+<script src="./main.js"></script>
+</body>
+</html>

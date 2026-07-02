@@ -1,0 +1,95 @@
+# Fathom — spike — Operating guide (read this first)
+
+This repo is the **feasibility spike + real-data proof** for **Fathom**: a WebGPU
+"observability cinema" for LLM-ops telemetry (chosen as the flagship in a 2026 deep-research
+pass). It is **not the product yet** — it exists to de-risk the two unknowns before a v1 build:
+
+1. **Perf** — can WebGPU sim+render ~1M span-particles at 60fps? → **proven GO** (see `PROOF.md`).
+2. **Real-data look** — do real `sentinel` spans render as a legible, striking river? → **yes** (see `fathom-river.png`).
+
+## The pieces
+- **Cinema** (`app/`) — a Vite + React + TypeScript app (M0): a thin React shell (HUD/legend/controls) over a
+  **raw-WebGPU core** (`app/src/gpu/*`; WGSL in `app/src/gpu/shaders/`). Two modes: **live** (SSE spawn queue,
+  one comet per span as it arrives) and **replay** (loops a captured trace). Primary artifact + seed of v1 (`SPEC.md`).
+- **Server** (`server/`, M1) — Node + TS: generic **OTLP/HTTP receiver** `POST /v1/traces` → normalized mapper
+  → ring buffer → **SSE `/stream`**; optional sentinel `/traces?since=` poller (judge scores) + file replay.
+  Any OTel gateway feeds it; sentinel via `OTEL_EXPORTER_OTLP_ENDPOINT`.
+- **Perf spike** (`spike/`) — `index.html` + `main.js` + `bench.mjs`: compute-shader particle sim + a
+  `timestamp-query` benchmark sweeping 100k→2M particles → GO/LOD/RETHINK.
+- **Data pipeline** — `ingest.mjs` (sentinel `TraceRecord[]` → normalized), `synth-traces.mjs` (synthetic sample),
+  `record.mjs` (video capture), `tools/sentinel-dump.ts` (offline real-span capture). `shared/schema.ts` is the
+  normalized contract that `app/` and `server/` both import.
+
+## Layout
+| Path | Role |
+|---|---|
+| `app/` | **cinema** — Vite + React + TS; raw-WebGPU core `app/src/gpu/`, SSE client `app/src/lib/stream.ts`, shell `app/src/ui/` |
+| `app/public/traces.json` · `.sample.json` | trace data the app fetches in replay mode (copy of the root files) |
+| `server/` | **live server** (M1) — OTLP receiver + SSE (`src/otlp.ts`, `src/hub.ts`, `src/index.ts`); `tools/` = emit/live-demo/sentinel-otlp checks; `e2e.ts` |
+| `shared/schema.ts` | the normalized ingestion contract (imported by `app/` and `server/`) |
+| `spike/` | perf spike + benchmark (`index.html`, `main.js`, `bench.mjs`, `river-1M.png`) |
+| `ingest.mjs` | sentinel `TraceRecord[]` → normalized schema (the mapper to port into `server/`) |
+| `synth-traces.mjs` | schema-faithful *synthetic* sample (dev only; clearly labeled in-app) |
+| `record.mjs` | Playwright capture → hero `.png` + `.webm` (+ `.mp4`/`.gif` if ffmpeg) |
+| `tools/sentinel-dump.ts` | reference capture script (copy into `<sentinel>/load/`, run, delete) |
+| `data/` | captured raw trace records (gitignored) |
+| `fathom.html` · `fathom.js` | **legacy** standalone cinema (superseded by `app/`; kept for `record.mjs`) |
+| `README.md` · `ARCHITECTURE.md` · `PROOF.md` · `SPEC.md` | docs (keep in sync — see below) |
+
+## How to run
+```bash
+# cinema (the app)
+npm run app:install           # once — installs app/ deps (vite, react, ts)
+npm run dev                   # http://localhost:5173  (Vite dev; ?source=live|real|sample)
+npm run build                 # tsc -b + vite build -> app/dist
+node app/shot.mjs             # build first; screenshots the running app on the real GPU
+
+# live server (M1)  — point any OTel gateway's OTEL_EXPORTER_OTLP_ENDPOINT at http://localhost:4319/v1/traces
+npm run server:install        # once
+npm run server                # OTLP POST /v1/traces · SSE /stream  (env: REPLAY_FILE, SENTINEL_TRACES_URL+SENTINEL_ADMIN_KEY)
+npm --prefix server run e2e   # in-process OTLP→map→Hub→SSE proof (real captured spans)
+node server/tools/live-demo.mjs           # server + browser(live) + real spans as OTLP -> app/m1-live.png
+node server/tools/sentinel-otlp-check.mjs # REAL sentinel gateway -> OTLP -> Fathom (temp harness, deleted after)
+
+# perf spike
+npm run bench                 # real-GPU benchmark (node spike/bench.mjs) -> GO/LOD/RETHINK + spike/river-1M.png
+npm run serve:spike           # http://localhost:8971/  interactive perf spike
+
+# data pipeline
+npm run sample                # regenerate traces.sample.json
+npm run record                # capture fathom-river.png/.webm from the legacy standalone cinema
+#
+# capture real sentinel spans (offline, no keys) — see ARCHITECTURE.md "Capture"
+#   1) copy tools/sentinel-dump.ts -> <sentinel>/load/run.dump.ts
+#   2) <sentinel>/node_modules/.bin/tsx <sentinel>/load/run.dump.ts   -> data/sentinel-traces-raw.json
+#   3) delete the temp file (keep sentinel pristine)
+npm run ingest                # -> traces.json ; then copy to app/public/ to refresh the app's data
+```
+
+## Conventions & rules (follow these)
+- **Documentation is load-bearing — keep it in sync.** `CLAUDE.md`, `README.md`, `ARCHITECTURE.md`,
+  `PROOF.md`, and `SPEC.md` must track the code. In the **same change** that alters behavior, a file's role,
+  the data schema, run commands, or any measured number, **update the affected doc(s)**. Never let a doc
+  claim something the code no longer does. `PROOF.md` numbers must come from a real run you actually ran.
+- **Honesty over polish.** Anything synthetic is labeled synthetic in-app and in docs. Real spans are
+  real; the only manipulation is *interleaving* replay order (documented). Benchmark headline numbers
+  state replayed-vs-live and which GPU produced them.
+- **Keyless & offline.** Real span capture uses `sentinel`'s `pnpm load` mock upstreams — no API keys,
+  no network. Never add secrets. Leave `sentinel` pristine (the dumper is temporary; delete it).
+- **Perf/GPU notes.** On Windows `powerPreference` is ignored (crbug/369219127) — pass Chrome
+  `--force_high_performance_gpu` to select the discrete GPU (see `bench.mjs`/`record.mjs`). Report which
+  adapter ran (`adapter.info`).
+- **WGSL gotchas.** `loop` is a reserved word — don't use it as an identifier (bit us once). Storage
+  structs use 16-byte-aligned `vec4` packing.
+
+## Environment
+node ≥ 20 · python 3 (static serve) · system Chrome/Edge with WebGPU · Playwright via `playwright-core`
+(uses installed Chrome, no browser download). Dev machine has an Intel UHD + NVIDIA RTX 4070.
+
+## Status & next
+Perf: **GO**. Cinema: **working**. **M0 + M1 done** (branch `feat/m0-scaffold`): cinema is a Vite+React+TS app
+(`app/`, raw-WebGPU core in modules); perf spike in `spike/` (still GO); **live server (`server/`) shipped** —
+generic OTLP receiver + SSE, proven end-to-end incl. the real sentinel gateway exporting OTLP (`PROOF.md` §3–4).
+Still missing (v1): **M2 drill-down** (flare → span), M3 3D cost flame graph, M4 richness (bloom/curl-noise),
+M5 hosted demo. **The v1 build plan is in [`SPEC.md`](./SPEC.md)** (milestones M0–M5). **Next: M2 (drill-down).**
+Decision context: vault note `next-flagship-project-research.md`.
