@@ -1,0 +1,20 @@
+# deps + build output
+node_modules/
+dist/
+*.tsbuildinfo
+app/m0-app.png
+app/m1-live.png
+
+# capture / render working dirs + large media (regenerable)
+.rec/
+/data/
+*.webm
+*.mp4
+*.gif
+
+# dev-only sample render (the synthetic sample; keep the *real* hero pngs tracked)
+cinema-sample.png
+
+# os
+Thumbs.db
+.DS_Store
