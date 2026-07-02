@@ -1,0 +1,6 @@
+# Normalize line endings: store LF in git, check out native. Keeps binaries intact.
+* text=auto eol=lf
+*.png binary
+*.webm binary
+*.mp4 binary
+*.gif binary
