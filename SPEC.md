@@ -1,7 +1,7 @@
 # Fathom — v1 Build Spec
 
-> Status: **spec** (v1 not yet implemented). The spike + real-data proof this builds on are **done** — see
-> [`PROOF.md`](./PROOF.md). This document is the plan to take Fathom from a proven spike to a rich, shippable v1.
+> Status: **spec** (v1 not yet implemented). The perf spike + real-data proof this builds on are **done** — see
+> [`PROOF.md`](./PROOF.md). This document is the plan to take Fathom from a proven foundation to a rich, shippable v1.
 
 ## 1. Vision & the one bet
 **Fathom is a real-time, GPU-rendered "observability cinema" for LLM-ops telemetry.** Every LLM-gateway span

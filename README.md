@@ -1,6 +1,6 @@
-# Fathom — spike
+# Fathom
 
-**A WebGPU "observability cinema" for LLM-ops telemetry — feasibility spike + real-data proof.**
+**A WebGPU "observability cinema" for LLM-ops telemetry.**
 
 Every particle is one real LLM-gateway span. Requests flow as glowing comets into lanes by their
 real outcome: **cache hits** stream off as a cyan tributary, **429s** retry and fail over in amber,
