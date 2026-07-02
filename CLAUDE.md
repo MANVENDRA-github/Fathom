@@ -1,8 +1,9 @@
-# Fathom — spike — Operating guide (read this first)
+# Fathom — Operating guide (read this first)
 
-This repo is the **feasibility spike + real-data proof** for **Fathom**: a WebGPU
-"observability cinema" for LLM-ops telemetry (chosen as the flagship in a 2026 deep-research
-pass). It is **not the product yet** — it exists to de-risk the two unknowns before a v1 build:
+This repo is **Fathom**: a WebGPU "observability cinema" for LLM-ops telemetry (chosen as the
+flagship in a 2026 deep-research pass). It began as a feasibility spike to de-risk the two unknowns
+before committing to a v1 build — **both are now proven** — and has since become the seed of that
+v1 build (M0 + M1 done; see `SPEC.md`):
 
 1. **Perf** — can WebGPU sim+render ~1M span-particles at 60fps? → **proven GO** (see `PROOF.md`).
 2. **Real-data look** — do real `sentinel` spans render as a legible, striking river? → **yes** (see `fathom-river.png`).
