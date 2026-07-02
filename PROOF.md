@@ -69,7 +69,7 @@ npm run record          # = node record.mjs traces.json fathom-river 18
 
 ---
 
-## 3. M0 — app scaffold renders (branch `feat/m0-scaffold`)
+## 3. M0 — app scaffold renders (on `main`)
 
 The cinema, ported to a Vite + React + TypeScript app with the raw-WebGPU core in TS modules, builds clean and
 renders the real trace; the relocated perf spike still passes.
@@ -89,7 +89,7 @@ still prints GO. The React shell adds real/sample + pause controls; the WGSL cor
 
 ---
 
-## 4. M1 — live OTLP end-to-end (branch `feat/m0-scaffold`)
+## 4. M1 — live OTLP end-to-end (on `main`)
 
 A generic OTLP/HTTP receiver + SSE server (`server/`) + a client live spawn queue. Proven at three levels.
 
