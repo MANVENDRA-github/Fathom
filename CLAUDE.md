@@ -97,8 +97,9 @@ Perf: **GO**. Cinema: **working**. **M0–M2 done** (all on `main`; M2 drill-dow
 cinema is a Vite+React+TS app (`app/`, raw-WebGPU core in modules); perf spike in `spike/` (still GO);
 **live server (`server/`) shipped** — generic OTLP receiver + SSE + `/traces/:id`, proven end-to-end incl. the
 real sentinel gateway exporting OTLP (`PROOF.md` §3–5). **M2**: click a comet → correct span → its real
-attributes via `/traces/:id`; the pick is CPU math mirroring the shader (`app/src/gpu/motion.ts`), the detail
-panel (`SpanDetail.tsx`) is intentionally plain (rich visual pass = Fable, per `SPEC.md` model policy).
+attributes via `/traces/:id`; the pick is CPU math mirroring the shader (`app/src/gpu/motion.ts`); the detail
+UI (`SpanDetail.tsx`, Fable pass) is an outcome-lit callout — reticle on the comet, leader line to a card
+parked opposite it, lit in the outcome's lane color; sections mirror normalized-vs-raw (`SPEC.md` model policy).
 Still missing (v1): M3 3D cost flame graph, M4 richness (bloom/curl-noise), M5 hosted demo.
 **The v1 build plan is in [`SPEC.md`](./SPEC.md)** (milestones M0–M5). **Next: M3 (3D cost flame graph).**
 Decision context: vault note `next-flagship-project-research.md`.

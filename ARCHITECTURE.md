@@ -143,6 +143,11 @@ Clicking a comet resolves it to its source span, entirely from the shape the ren
   the normalized fields immediately, then (live only) fetches `GET /traces/:id` (`lib/detail.ts`) for the raw
   `gen_ai.*`/`sentinel.*` attributes the server retained in its by-id map (`hub.ts`). Static replay data has no
   ids/attributes, so it shows normalized fields only (labeled). Proven on the real GPU: `PROOF.md` §5.
+- **Callout UI (`ui/SpanDetail.tsx`).** The card is a callout, not a modal: a reticle marks the caught comet, a
+  leader line ties it to a card parked on the *opposite* side (never hiding its subject), and the card is lit by
+  the outcome's lane color (`--accent`, the exact classify/legend hues) — top glow, chip, hot values. Sections
+  (route / outcome / usage / raw attributes) mirror the normalized-vs-raw contract; raw keys dim their
+  namespace (`sentinel.`/`gen_ai.`). Escape closes; animations respect `prefers-reduced-motion`.
 
 ## Decisions & gotchas
 - **Closed-form vs compute for the cinema.** Chosen for simplicity + seamless looping; compute was already
