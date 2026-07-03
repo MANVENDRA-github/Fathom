@@ -149,6 +149,24 @@ Clicking a comet resolves it to its source span, entirely from the shape the ren
   (route / outcome / usage / raw attributes) mirror the normalized-vs-raw contract; raw keys dim their
   namespace (`sentinel.`/`gen_ai.`). Escape closes; animations respect `prefers-reduced-motion`.
 
+## Cost flame graph (M3 — cost aggregation + view toggle)
+A `river`↔`$ flame` toggle (`ui/Controls.tsx`) switches the whole view. The flame graph is cost-by-model.
+
+- **Aggregation (`data/cost.ts`).** `aggregateCost(events, metric)` reduces spans to a two-level flame tree
+  (provider → model), summing **cost / tokens / requests** per node and laying out a normalized `x0/x1` span per
+  row — this object is the contract the Fable 3D WGSL pass will consume. Pure + CPU-side, so its totals reconcile
+  with the HUD **by construction**: `summarize(events)` (same file, reusing `outcomeOf`) drives the HUD in flame
+  view and equals `aggregateCost().totals`. A new HUD `spend` metric (`RiverStats.costUsd`, summed in `river.ts`)
+  is the on-screen anchor. Verified: `app/tools/cost-check.ts` + `PROOF.md` §6.
+- **Data source.** Replay/sample aggregate the loaded `trace.events`; **live** aggregates the server's live ring
+  buffer via `GET /debug/recent?n=` (polled), i.e. "cost from the live buffer".
+- **Metric toggle + honesty.** The real capture has `costUsd` null everywhere → the cost total is `$0`
+  (`unpriced`), so the flame lays out by request volume and prompts the **tokens** toggle; only
+  `traces.sample.json` carries real cost (3 providers / 3 models). Tokens/requests are populated on every source.
+- **Seam.** The flame render is a plain DOM breakdown (`ui/FlameView.tsx`) — the correct-data seam. Fable builds
+  the 3D WGSL flame on the canvas next (no camera/matrix infra exists yet; the spike's compute+render two-pipeline
+  pattern is the template). This is the same Opus-data → Fable-visual handoff used on M2.
+
 ## Decisions & gotchas
 - **Closed-form vs compute for the cinema.** Chosen for simplicity + seamless looping; compute was already
   proven in the spike, so the cinema didn't need it. Curl-noise flow would need compute (a v1 option).

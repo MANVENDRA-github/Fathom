@@ -11,7 +11,8 @@ real outcome: **cache hits** stream off as a cyan tributary, **429s** retry and 
 > Perf and the real-data look are proven (see [`PROOF.md`](./PROOF.md)); the v1 build is underway per
 > [`SPEC.md`](./SPEC.md). **Done: M0** (the app) **+ M1** (a generic OTLP live server — real sentinel spans
 > stream in as comets) **+ M2** (drill-down — click a comet → its real span attributes via `GET /traces/:id`).
-> **Next:** 3D cost flame graph, bloom, hosted demo.
+> **In progress: M3** — a `river`↔`$ flame` toggle + cost-by-provider→model aggregation that reconciles with the
+> HUD (Opus half done; the 3D WGSL flame is the Fable half). **Next:** M3 3D render, bloom, hosted demo.
 
 ---
 

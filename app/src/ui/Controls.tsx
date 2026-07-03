@@ -1,4 +1,5 @@
 export type SourceKey = 'live' | 'real' | 'sample';
+export type ViewKey = 'river' | 'flame';
 
 export const REPLAY_FILES: Record<'real' | 'sample', string> = {
   real: 'traces.json',
@@ -6,12 +7,15 @@ export const REPLAY_FILES: Record<'real' | 'sample', string> = {
 };
 
 const LABELS: Record<SourceKey, string> = { live: '● live', real: 'real', sample: 'sample' };
+const VIEW_LABELS: Record<ViewKey, string> = { river: 'river', flame: '$ flame' };
 
 export function Controls({
-  source, onSource, paused, onPause,
+  source, onSource, view, onView, paused, onPause,
 }: {
   source: SourceKey;
   onSource: (s: SourceKey) => void;
+  view: ViewKey;
+  onView: (v: ViewKey) => void;
   paused: boolean;
   onPause: () => void;
 }) {
@@ -20,7 +24,11 @@ export function Controls({
       {(['live', 'real', 'sample'] as SourceKey[]).map((s) => (
         <button key={s} className={source === s ? 'active' : ''} onClick={() => onSource(s)}>{LABELS[s]}</button>
       ))}
-      <button onClick={onPause}>{paused ? '▶ play' : '⏸ pause'}</button>
+      <span className="ctl-sep" />
+      {(['river', 'flame'] as ViewKey[]).map((v) => (
+        <button key={v} className={view === v ? 'active' : ''} onClick={() => onView(v)}>{VIEW_LABELS[v]}</button>
+      ))}
+      {view === 'river' && <button onClick={onPause}>{paused ? '▶ play' : '⏸ pause'}</button>}
     </div>
   );
 }

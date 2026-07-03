@@ -172,6 +172,40 @@ math is not. `server` typecheck green; `app` build green.
 
 ---
 
+## 6. M3 — cost flame graph, Opus half (aggregation reconciles with the HUD)
+
+A `river`↔`$ flame` view toggle renders cost-by-provider→model; the aggregation is pure/CPU-side so its
+totals reconcile with the HUD. (The 3D WGSL flame itself is the Fable half — pending. This half proves the
+data + toggle + reconciliation via a plain DOM breakdown.)
+
+**(a) Aggregation reconciles** (deterministic unit harness, both real datasets):
+```bash
+node server/node_modules/tsx/dist/cli.mjs app/tools/cost-check.ts
+#   PASS Σ providers.cost === totals.cost === raw Σ costUsd (and tokens) · provider === Σ children · rows tile [0,1]
+#   PASS real traces.json → unpriced (cost $0), tokens > 0 · sample → 3 providers / 3 models, cost > 0
+#   PASS summarize() === aggregateCost().totals  (the HUD invariant)
+#   OK — cost aggregation reconciles (real + sample, all metrics)   (43/43)
+```
+
+**(b) Reconciles on screen** (flame view, real GPU, sample dataset):
+```bash
+npm run build
+# load ?source=sample&view=flame :
+#   PASS 3 provider segments · 3 model segments
+#   PASS HUD spend "$0.1120" === flame total "$0.1120"   (reconciled on screen)
+#   sample cost total = $0.111993  →  groq 64% ($0.0714) · openai 36% ($0.0406) · ollama $0 (unpriced)
+# load ?source=real&view=flame :
+#   PASS real capture shows the unpriced note · cost total $0 · renders non-empty on the tokens toggle
+#   OK — flame reconciles with the HUD (sample) + honest unpriced state (real)   (8/8)
+```
+Artifact: `app/m3-cost.png` (the flame breakdown + HUD `spend` matching the flame total).
+
+**M3 data/reconciliation criterion met:** the toggle renders cost-by-model/provider (from the loaded trace, or
+the live buffer via `GET /debug/recent`) and the numbers reconcile with the HUD. Real capture is `costUsd`-null
+(honest `unpriced` state — the sample carries real cost). `app` build green. The 3D WGSL render is the Fable half.
+
+---
+
 ## Claim → evidence
 | Claim | Evidence |
 |---|---|
