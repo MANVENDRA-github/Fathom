@@ -1,5 +1,5 @@
 import type { Hub } from './hub';
-import type { TraceEvent, Guardrail } from '../../shared/schema';
+import type { SpanDetail, Guardrail } from '../../shared/schema';
 
 /**
  * Optional sentinel adapter: poll GET /traces?since=<cursor> to enrich the stream with
@@ -8,8 +8,17 @@ import type { TraceEvent, Guardrail } from '../../shared/schema';
  * `since` is inclusive + start-time based). Enabled only when SENTINEL_TRACES_URL is set.
  */
 
-/** sentinel TraceRecord → normalized TraceEvent (mirrors ingest.mjs). */
-function recordToEvent(r: Record<string, unknown>): TraceEvent {
+/** Keep only primitive fields of the raw record for drill-down (drop nested objects/arrays). */
+function primitives(r: Record<string, unknown>): Record<string, string | number | boolean> {
+  const out: Record<string, string | number | boolean> = {};
+  for (const [k, v] of Object.entries(r)) {
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') out[k] = v;
+  }
+  return out;
+}
+
+/** sentinel TraceRecord → normalized SpanDetail (mirrors ingest.mjs). */
+function recordToEvent(r: Record<string, unknown>): SpanDetail {
   const viol = String(r.guardrailViolations ?? '');
   const piiCategories = viol ? viol.split(',').map((s) => s.trim()).filter((s) => s.startsWith('pii.')) : [];
   const total = (r.totalTokens as number | null) ?? null;
@@ -28,6 +37,9 @@ function recordToEvent(r: Record<string, unknown>): TraceEvent {
     guardrail: ((r.guardrailStatus as string) ?? null) as Guardrail,
     pii: piiCategories.length > 0 || r.guardrailStatus === 'block',
     piiCategories,
+    // M2 drill-down: retain the raw sentinel record (primitives) for GET /traces/:id.
+    name: (r.operation as string) || (r.endpoint as string) || 'gateway.request',
+    attributes: primitives(r),
   };
 }
 
@@ -43,7 +55,7 @@ export function startPoller(hub: Hub, baseUrl: string, adminKey: string, pollMs 
       });
       if (!res.ok) return;
       const records = (await res.json()) as Array<Record<string, unknown>>;
-      const fresh: TraceEvent[] = [];
+      const fresh: SpanDetail[] = [];
       for (const r of records) {
         const id = r.id as string;
         const ts = (r.timestamp as number) ?? 0;
