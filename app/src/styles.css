@@ -123,3 +123,51 @@ body {
   .detail, .reticle::before { animation: none; }
   .leader line { animation: none; stroke-dashoffset: 0; }
 }
+
+/* --- M3 cost flame graph: the plain DOM seam (Fable builds the 3D version) --- */
+.ctl-sep { width: 1px; align-self: stretch; background: rgba(120, 160, 255, 0.2); margin: 0 3px; }
+
+.flame {
+  top: 92px; left: 50%; transform: translateX(-50%);
+  width: min(880px, 92vw); max-height: calc(100vh - 190px); overflow-y: auto;
+  padding: 18px 20px; z-index: 12;
+}
+.flame-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 14px; }
+.flame-title { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: #7f849c; }
+.flame-total { font-size: 22px; color: #f9e2af; font-variant-numeric: tabular-nums; margin-top: 3px; }
+.flame-total b { font-weight: 600; }
+.flame-total .k { font-size: 11px; color: #7f849c; }
+.flame-metrics { display: flex; gap: 6px; flex: none; }
+.flame-metrics button {
+  font: inherit; color: #cdd6f4; background: rgba(70, 90, 160, 0.25);
+  border: 1px solid rgba(120, 160, 255, 0.3); border-radius: 6px; padding: 3px 10px; cursor: pointer;
+}
+.flame-metrics button:hover { background: rgba(90, 120, 210, 0.4); }
+.flame-metrics button.active { background: #7aa2f7; color: #10131f; border-color: #7aa2f7; }
+
+.flame .muted { color: #7f849c; font-size: 12px; padding: 24px 0; text-align: center; }
+.flame-note {
+  font-size: 11px; color: #f9e2af; background: rgba(200, 160, 40, 0.1);
+  border: 1px solid rgba(208, 168, 40, 0.35); border-radius: 8px; padding: 6px 10px; margin-bottom: 12px;
+}
+.linkish { background: none; border: none; color: #89b4fa; cursor: pointer; font: inherit; text-decoration: underline; padding: 0; }
+
+.flame-rows { display: flex; flex-direction: column; gap: 3px; margin-bottom: 16px; }
+.flame-row { position: relative; height: 34px; }
+.fseg {
+  position: absolute; top: 0; bottom: 0; padding: 0 6px; display: flex; align-items: center; overflow: hidden;
+  background: color-mix(in srgb, var(--seg) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--seg) 92%, #000); border-radius: 3px;
+  box-shadow: inset 0 0 14px color-mix(in srgb, var(--seg) 45%, transparent);
+}
+.fseg-l { font-size: 10px; color: #0a0d15; font-weight: 600; white-space: nowrap; }
+
+.flame-table { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 28px; }
+.ftrow { display: flex; align-items: center; gap: 8px; padding: 2px 0; font-size: 12px; }
+.ftrow .dot { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+.ftp { color: #cdd6f4; font-weight: 600; margin-top: 4px; }
+.ftm { color: #a6adc8; padding-left: 15px; font-size: 11px; }
+.ftlabel { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ftv { font-variant-numeric: tabular-nums; color: #f9e2af; }
+.ftm .ftv { color: #bac2de; }
+.ftpct { color: #7f849c; font-size: 10px; width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
