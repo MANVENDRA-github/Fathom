@@ -128,6 +128,50 @@ to the trailing window; (4) leaked snapshot timers on unmount → removed. All p
 
 ---
 
+## 5. M2 — drill-down (click a comet → its real span, verified against `/traces/:id`)
+
+Clicking a comet resolves it to the correct span and shows that span's **real attributes**. The pick is
+pure CPU math (`app/src/gpu/motion.ts`) that mirrors the shader's closed-form motion (`shaders/river.wgsl`)
+and inverts a screen click back to the nearest comet head; the server now retains each span's raw
+attributes and serves them at `GET /traces/:id` (the SSE stream stays lean — attributes are fetched on
+demand, not streamed).
+
+**(a) Pick math inverts the shader** (deterministic unit harness, no GPU):
+```bash
+node server/node_modules/tsx/dist/cli.mjs app/tools/pick-check.ts
+#   PASS round-trip (project head → click that px → same head) · tau>life cull · cycle wrap
+#   PASS nearest-wins · min-radius floor · build.ts emits one head/comet in its outcome lane
+#   OK — pick math mirrors the shader (motion.ts) + build.ts heads   (12/12)
+```
+
+**(b) Server retains attributes + `/traces/:id`** (in-process, real captured spans):
+```bash
+npm --prefix server run e2e
+#   PASS getById returns the span · retained attributes non-empty · status code preserved · span name retained
+#   PASS unknown id → undefined (endpoint 404s) · SSE span frames omit raw attributes (lean stream)
+#   OK — 460 real spans through OTLP→map→Hub→SSE (+/traces/:id retention)   (15/15)
+```
+
+**(c) Full loop on the real GPU** — click a live comet → correct span → `/traces/:id`:
+```bash
+npm run build
+node server/tools/pick-e2e.mjs             # spawns server, ?source=live&debug=1, streams real spans as OTLP
+#   [e2e] streamed 81 OTLP spans; 48 comet heads visible after freeze
+#   PASS click resolved the clicked comet (id 000000000span-53)
+#   PASS drill-down rendered raw attributes · GET /traces/:id → 200 · DOM id === server id
+#   GPU: nvidia · lovelace · clicked (766,582)px · /traces/:id → 7 raw attributes · app/m2-drill.png
+#   OK — click → correct span → /traces/:id on the real GPU   (8/8)
+```
+
+**M2 exit criterion met:** a click on the GPU canvas opens the correct span's real attributes, and the
+DOM readout's id reconciles with the independently-fetched `GET /traces/:id`. Artifact: `app/m2-drill.png`
+(the drill-down panel shows both normalized fields and the raw `gen_ai.*`/`sentinel.*` attributes, with
+the pick marker on the clicked comet). The harness supplies the click coordinate programmatically via a
+`?debug=1` hook, but through the **same** `pick()` path a human click uses — the coordinate is chosen, the
+math is not. `server` typecheck green; `app` build green.
+
+---
+
 ## Claim → evidence
 | Claim | Evidence |
 |---|---|
