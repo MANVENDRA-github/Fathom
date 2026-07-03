@@ -4,6 +4,7 @@ dist/
 *.tsbuildinfo
 app/m0-app.png
 app/m1-live.png
+app/m2-drill.png
 
 # capture / render working dirs + large media (regenerable)
 .rec/
