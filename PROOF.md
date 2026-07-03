@@ -200,9 +200,31 @@ npm run build
 ```
 Artifact: `app/m3-cost.png` (the flame breakdown + HUD `spend` matching the flame total).
 
-**M3 data/reconciliation criterion met:** the toggle renders cost-by-model/provider (from the loaded trace, or
-the live buffer via `GET /debug/recent`) and the numbers reconcile with the HUD. Real capture is `costUsd`-null
-(honest `unpriced` state — the sample carries real cost). `app` build green. The 3D WGSL render is the Fable half.
+**(c) The 3D WGSL flame** (Fable half — real GPU, monoliths + embers + orbit + labels):
+```bash
+node server/node_modules/tsx/dist/cli.mjs app/tools/mat4-check.ts
+#   PASS near→0 / far→1 (WebGPU clip-Z, not GL) · lookAt orthonormal · pick ray inverts the projection
+#   OK — mat4 maps Z to [0,1] and the pick ray inverts the projection   (10/10)
+npm run build
+# load ?source=sample&view=flame (nvidia · lovelace):
+#   PASS 2 priced provider labels on cost (ollama = $0 → a zero-width flame node, honestly absent)
+#   PASS 3 provider labels on requests · HUD spend "$0.1120" === legend total "$0.1120"
+#   PASS frame pacing avg 4.48 ms / p95 4.90 ms  (16.7 ms budget)  · hover lights the legend row
+# load ?source=real&view=flame:
+#   PASS unpriced note shown · tokens toggle renders a labeled skyline (5,520 tokens, 2 providers)
+#   OK — 3D flame renders, reconciles, and holds 60fps   (7/7)
+node server/tools/pick-e2e.mjs   # river regression after the App changes
+#   OK — click → correct span → /traces/:id on the real GPU   (8/8, unchanged)
+```
+Artifacts: `app/m3-flame.png` (sample, cost — blue/teal monoliths + embers + tracked labels),
+`app/m3-flame-real.png` (real capture on the tokens metric).
+
+**M3 exit criterion met (both halves):** the toggle renders cost-by-model/provider (from the loaded trace, or
+the live buffer via `GET /debug/recent`), the numbers reconcile with the HUD on screen, and the scene is a
+rotating 3D WGSL flame graph — provider monoliths + stacked model bars extruded from the aggregation's layout,
+closed-form embers (no compute pass), orbit camera, ray-picked hover, DOM labels tracking bars in 3D — at
+~4.5 ms/frame on the 4070 (3.7× headroom). Real capture is `costUsd`-null (honest `unpriced` state — the
+sample carries real cost). `app` build green.
 
 ---
 

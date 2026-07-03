@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { NormalizedTrace, TraceMeta, TraceEvent, SpanDetail as SpanDetailData } from '@shared/schema';
 import { createRiver, type RiverHandle, type RiverStats, type PickResult } from './gpu/river';
+import { createFlame, type FlameHandle, type FlameAnchor } from './gpu/flame';
 import { hasWebGPU } from './gpu/capabilities';
 import { connectStream } from './lib/stream';
 import { fetchSpanDetail } from './lib/detail';
@@ -8,7 +9,7 @@ import { aggregateCost, summarize, type CostMetric } from './data/cost';
 import { Hud } from './ui/Hud';
 import { Legend } from './ui/Legend';
 import { SpanDetail } from './ui/SpanDetail';
-import { FlameView } from './ui/FlameView';
+import { FlameView, fmt } from './ui/FlameView';
 import { Controls, type SourceKey, type ViewKey, REPLAY_FILES } from './ui/Controls';
 
 const SERVER = import.meta.env.VITE_FATHOM_SERVER || 'http://localhost:4319';
@@ -24,9 +25,12 @@ function initialView(): ViewKey {
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const handleRef = useRef<RiverHandle | null>(null);
+  const flameRef = useRef<FlameHandle | null>(null);
   const [source, setSource] = useState<SourceKey>(initialSource);
   const [view, setView] = useState<ViewKey>(initialView);
   const [metric, setMetric] = useState<CostMetric>('cost');
+  const [anchors, setAnchors] = useState<FlameAnchor[]>([]);
+  const [hoverKey, setHoverKey] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
   const [stats, setStats] = useState<RiverStats | null>(null);
   const [meta, setMeta] = useState<TraceMeta | null>(null);
@@ -48,8 +52,16 @@ export default function App() {
     setSelected(null); setDetail(null);
 
     if (view === 'flame') {
-      // Flame view: no river/GPU — aggregate the event set for cost-by-model/provider.
-      setEvents(null); setFlameLoading(true);
+      // Flame view: the 3D cost flame graph — aggregate the event set, render it as monoliths + embers.
+      setEvents(null); setFlameLoading(true); setAnchors([]); setHoverKey(null);
+      flameRef.current = createFlame(canvas, {
+        onAnchors: setAnchors,
+        onHover: setHoverKey,
+        onPick: (key) => {
+          setHoverKey(key);
+          if (key) document.querySelector(`.ftrow[data-key="${CSS.escape(key)}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        },
+      });
       if (source === 'live') {
         // Aggregate the server's live ring buffer (poll so the flame tracks the stream).
         const loadLive = async () => {
@@ -107,6 +119,8 @@ export default function App() {
       if (refresh) clearInterval(refresh);
       handleRef.current?.destroy();
       handleRef.current = null;
+      flameRef.current?.destroy();
+      flameRef.current = null;
     };
     // re-create only on source/view change; pause is applied imperatively.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -120,7 +134,10 @@ export default function App() {
   }, [events, source]);
   const hudStats = view === 'flame' ? flameStats : stats;
 
-  const togglePause = () => setPaused((p) => { const n = !p; handleRef.current?.setPaused(n); return n; });
+  // Feed the 3D renderer whenever the aggregation changes (metric toggle, live poll, source load).
+  useEffect(() => { flameRef.current?.setModel(costModel); }, [costModel]);
+
+  const togglePause = () => setPaused((p) => { const n = !p; handleRef.current?.setPaused(n); flameRef.current?.setPaused(n); return n; });
   const changeView = (v: ViewKey) => { setSelected(null); setDetail(null); setView(v); };
 
   // Click a comet → resolve it to its span, then (live) fetch its raw attributes from /traces/:id.
@@ -144,7 +161,8 @@ export default function App() {
     (window as unknown as Record<string, unknown>).__fathom = {
       heads: () => handleRef.current?.debugHeads() ?? [],
       pick: (x: number, y: number) => handleRef.current?.pick(x, y) ?? null,
-      pause: (p: boolean) => handleRef.current?.setPaused(p),
+      pause: (p: boolean) => { handleRef.current?.setPaused(p); flameRef.current?.setPaused(p); },
+      flamePick: (x: number, y: number) => flameRef.current?.pick(x, y) ?? null,
     };
     return () => { delete (window as unknown as Record<string, unknown>).__fathom; };
   }, []);
@@ -155,8 +173,23 @@ export default function App() {
 
   return (
     <>
-      <canvas ref={canvasRef} id="gpu-canvas" onPointerDown={onCanvasPointerDown} style={flameView ? { display: 'none' } : undefined} />
-      {flameView && <FlameView model={costModel} metric={metric} onMetric={setMetric} loading={flameLoading} />}
+      <canvas ref={canvasRef} id="gpu-canvas" onPointerDown={onCanvasPointerDown} />
+      {flameView && (
+        <>
+          {anchors.map((a) => (
+            <div
+              key={a.key}
+              className={`flame-label${hoverKey === a.key ? ' hot' : ''}`}
+              data-visible={a.visible}
+              style={{ left: a.x, top: a.y }}
+            >
+              <span className="fl-name">{a.label}</span>
+              <span className="fl-val">{fmt(a.value, metric)}</span>
+            </div>
+          ))}
+          <FlameView model={costModel} metric={metric} onMetric={setMetric} loading={flameLoading} hotKey={hoverKey} />
+        </>
+      )}
       {!flameView && selected && (
         <SpanDetail
           event={selected.event} outcome={selected.outcome} screen={selected.screen}

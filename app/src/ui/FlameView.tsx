@@ -1,54 +1,41 @@
-import type { CostMetric, CostModel, FlameNode } from '../data/cost';
+import type { CostMetric, CostModel } from '../data/cost';
 
 /**
- * Flame graph — the M3 Opus seam (plain DOM). Renders the cost aggregation as a two-level
- * provider→model breakdown with a metric toggle, from the exact `x0/x1` layout the Fable 3D WGSL
- * pass will consume. Deliberately plain: this proves the data + reconciliation; Fable builds the
- * cinematic 3D flame on the canvas next.
+ * Flame legend (M3) — the numeric truth beside the 3D flame. The canvas renders the bars; this
+ * right-docked panel carries the exact values, the metric toggle, and the honest states. Hovering
+ * a bar in 3D lights its row here (`hotKey`); clicking a bar scrolls its row into view.
  */
 
 const METRICS: CostMetric[] = ['cost', 'tokens', 'requests'];
 
-function fmt(v: number, metric: CostMetric): string {
+export function fmt(v: number, metric: CostMetric): string {
   if (metric === 'cost') return v === 0 ? '$0' : `$${v < 1 ? v.toFixed(4) : v.toFixed(2)}`;
   return Math.round(v).toLocaleString();
 }
 const rgb = (c: [number, number, number]) => `rgb(${c.map((x) => Math.round(x * 255)).join(', ')})`;
 
-function Seg({ node, metric }: { node: FlameNode; metric: CostMetric }) {
-  const w = (node.x1 - node.x0) * 100;
-  return (
-    <div
-      className="fseg"
-      style={{ left: `${node.x0 * 100}%`, width: `${w}%`, ['--seg' as string]: rgb(node.color) }}
-      title={`${node.label} · ${fmt(node.value, metric)} · ${Math.round(node.share * 100)}%`}
-    >
-      {w > 6 && <span className="fseg-l">{node.label}</span>}
-    </div>
-  );
-}
-
-export function FlameView({ model, metric, onMetric, loading }: {
+export function FlameView({ model, metric, onMetric, loading, hotKey }: {
   model: CostModel;
   metric: CostMetric;
   onMetric: (m: CostMetric) => void;
   loading?: boolean;
+  hotKey?: string | null;
 }) {
-  const models = model.providers.flatMap((p) => p.children);
   const empty = model.providers.length === 0;
+  const hot = (key: string) => (hotKey === key ? ' hot' : '');
 
   return (
     <div className="flame panel" data-total-cost={model.totals.cost}>
       <div className="flame-head">
         <div>
-          <div className="flame-title">cost by provider → model</div>
+          <div className="flame-title">{metric} by provider → model</div>
           <div className="flame-total"><b>{fmt(model.total, metric)}</b> <span className="k">total {metric}</span></div>
         </div>
-        <div className="flame-metrics">
-          {METRICS.map((m) => (
-            <button key={m} className={metric === m ? 'active' : ''} onClick={() => onMetric(m)}>{m}</button>
-          ))}
-        </div>
+      </div>
+      <div className="flame-metrics">
+        {METRICS.map((m) => (
+          <button key={m} className={metric === m ? 'active' : ''} onClick={() => onMetric(m)}>{m}</button>
+        ))}
       </div>
 
       {loading && <div className="muted">loading live buffer…</div>}
@@ -57,25 +44,21 @@ export function FlameView({ model, metric, onMetric, loading }: {
         <>
           {model.unpriced && (
             <div className="flame-note">
-              no cost captured for this source (<code>costUsd</code> is null) — laid out by request volume.
+              no cost captured for this source (<code>costUsd</code> is null) — bars show request volume.
               switch to <button className="linkish" onClick={() => onMetric('tokens')}>tokens</button>.
             </div>
           )}
-          <div className="flame-rows">
-            <div className="flame-row">{model.providers.map((p) => <Seg key={p.key} node={p} metric={metric} />)}</div>
-            <div className="flame-row">{models.map((m) => <Seg key={m.key} node={m} metric={metric} />)}</div>
-          </div>
           <div className="flame-table">
             {model.providers.map((p) => (
               <div className="ftgroup" key={p.key}>
-                <div className="ftrow ftp">
+                <div className={`ftrow ftp${hot(p.key)}`} data-key={p.key}>
                   <span className="dot" style={{ background: rgb(p.color) }} />
                   <span className="ftlabel">{p.label}</span>
                   <span className="ftv">{fmt(p.value, metric)}</span>
                   <span className="ftpct">{Math.round(p.share * 100)}%</span>
                 </div>
                 {p.children.map((m) => (
-                  <div className="ftrow ftm" key={m.key}>
+                  <div className={`ftrow ftm${hot(m.key)}`} data-key={m.key} key={m.key}>
                     <span className="dot" style={{ background: rgb(m.color) }} />
                     <span className="ftlabel">{m.label}</span>
                     <span className="ftv">{fmt(m.value, metric)}</span>
@@ -85,6 +68,7 @@ export function FlameView({ model, metric, onMetric, loading }: {
               </div>
             ))}
           </div>
+          <div className="flame-hint">drag to orbit · scroll to zoom · hover a bar</div>
         </>
       )}
     </div>

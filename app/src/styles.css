@@ -124,22 +124,23 @@ body {
   .leader line { animation: none; stroke-dashoffset: 0; }
 }
 
-/* --- M3 cost flame graph: the plain DOM seam (Fable builds the 3D version) --- */
+/* --- M3 cost flame graph: 3D scene on the canvas + right-docked legend --------
+   The canvas renders the monoliths/embers (gpu/flame.ts); this panel is the numeric truth.
+   .flame-label divs are DOM type tracking the 3D bars via projected anchors. */
 .ctl-sep { width: 1px; align-self: stretch; background: rgba(120, 160, 255, 0.2); margin: 0 3px; }
 
 .flame {
-  top: 92px; left: 50%; transform: translateX(-50%);
-  width: min(880px, 92vw); max-height: calc(100vh - 190px); overflow-y: auto;
-  padding: 18px 20px; z-index: 12;
+  top: 92px; right: 22px; width: 320px; max-height: calc(100vh - 190px); overflow-y: auto;
+  padding: 16px 18px; z-index: 12;
 }
-.flame-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 14px; }
-.flame-title { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: #7f849c; }
+.flame-head { margin-bottom: 10px; }
+.flame-title { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #7f849c; }
 .flame-total { font-size: 22px; color: #f9e2af; font-variant-numeric: tabular-nums; margin-top: 3px; }
 .flame-total b { font-weight: 600; }
 .flame-total .k { font-size: 11px; color: #7f849c; }
-.flame-metrics { display: flex; gap: 6px; flex: none; }
+.flame-metrics { display: flex; gap: 6px; margin-bottom: 12px; }
 .flame-metrics button {
-  font: inherit; color: #cdd6f4; background: rgba(70, 90, 160, 0.25);
+  font: inherit; font-size: 11px; color: #cdd6f4; background: rgba(70, 90, 160, 0.25);
   border: 1px solid rgba(120, 160, 255, 0.3); border-radius: 6px; padding: 3px 10px; cursor: pointer;
 }
 .flame-metrics button:hover { background: rgba(90, 120, 210, 0.4); }
@@ -152,22 +153,32 @@ body {
 }
 .linkish { background: none; border: none; color: #89b4fa; cursor: pointer; font: inherit; text-decoration: underline; padding: 0; }
 
-.flame-rows { display: flex; flex-direction: column; gap: 3px; margin-bottom: 16px; }
-.flame-row { position: relative; height: 34px; }
-.fseg {
-  position: absolute; top: 0; bottom: 0; padding: 0 6px; display: flex; align-items: center; overflow: hidden;
-  background: color-mix(in srgb, var(--seg) 80%, transparent);
-  border: 1px solid color-mix(in srgb, var(--seg) 92%, #000); border-radius: 3px;
-  box-shadow: inset 0 0 14px color-mix(in srgb, var(--seg) 45%, transparent);
-}
-.fseg-l { font-size: 10px; color: #0a0d15; font-weight: 600; white-space: nowrap; }
-
-.flame-table { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 28px; }
-.ftrow { display: flex; align-items: center; gap: 8px; padding: 2px 0; font-size: 12px; }
-.ftrow .dot { width: 9px; height: 9px; border-radius: 2px; flex: none; }
-.ftp { color: #cdd6f4; font-weight: 600; margin-top: 4px; }
-.ftm { color: #a6adc8; padding-left: 15px; font-size: 11px; }
+.flame-table { display: block; }
+.ftgroup { margin-bottom: 6px; }
+.ftrow { display: flex; align-items: center; gap: 8px; padding: 2.5px 5px; font-size: 12px; border-radius: 6px; border: 1px solid transparent; }
+.ftrow .dot { width: 9px; height: 9px; border-radius: 2px; flex: none; box-shadow: 0 0 6px currentColor; }
+.ftp { color: #cdd6f4; font-weight: 600; }
+.ftm { color: #a6adc8; padding-left: 20px; font-size: 11px; }
 .ftlabel { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ftv { font-variant-numeric: tabular-nums; color: #f9e2af; }
 .ftm .ftv { color: #bac2de; }
 .ftpct { color: #7f849c; font-size: 10px; width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+.ftrow.hot { background: rgba(122, 162, 247, 0.12); border-color: rgba(122, 162, 247, 0.35); }
+.flame-hint { margin-top: 10px; font-size: 10px; color: #565b74; text-align: center; letter-spacing: 0.04em; }
+
+/* DOM labels tracking the 3D bars (projected each few frames by gpu/flame.ts) */
+.flame-label {
+  position: fixed; z-index: 11; transform: translate(-50%, -100%);
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  pointer-events: none; opacity: 0; transition: opacity 200ms ease;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
+}
+.flame-label[data-visible='true'] { opacity: 1; }
+.flame-label .fl-name { font-size: 11px; color: #cdd6f4; letter-spacing: 0.06em; }
+.flame-label .fl-val { font-size: 13px; font-weight: 600; color: #f9e2af; font-variant-numeric: tabular-nums; }
+.flame-label.hot .fl-name { color: #ffffff; }
+.flame-label::after {
+  content: ''; width: 1px; height: 14px; margin-top: 2px;
+  background: linear-gradient(rgba(205, 214, 244, 0.5), transparent);
+}
+@media (prefers-reduced-motion: reduce) { .flame-label { transition: none; } }

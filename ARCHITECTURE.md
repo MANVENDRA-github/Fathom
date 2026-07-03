@@ -163,9 +163,19 @@ A `river`↔`$ flame` toggle (`ui/Controls.tsx`) switches the whole view. The fl
 - **Metric toggle + honesty.** The real capture has `costUsd` null everywhere → the cost total is `$0`
   (`unpriced`), so the flame lays out by request volume and prompts the **tokens** toggle; only
   `traces.sample.json` carries real cost (3 providers / 3 models). Tokens/requests are populated on every source.
-- **Seam.** The flame render is a plain DOM breakdown (`ui/FlameView.tsx`) — the correct-data seam. Fable builds
-  the 3D WGSL flame on the canvas next (no camera/matrix infra exists yet; the spike's compute+render two-pipeline
-  pattern is the template). This is the same Opus-data → Fable-visual handoff used on M2.
+- **3D renderer (`gpu/flame.ts` + `shaders/flame.wgsl` + `gpu/mat4.ts`).** The scene is extruded verbatim from
+  the aggregation's `x0/x1` layout: provider **monoliths** (height = share) with model bars stacked as an inset
+  crown, on a dark glass floor. One MSAA(4×)+depth pass, four pipelines in order — floor (opaque) → slab cores
+  (**opaque**, so the depth buffer resolves all overlap with zero sorting) → slab **aura** (additive fresnel
+  shell, depth read-only) → **embers** (additive billboards, depth read-only). Embers are *closed-form* like the
+  river — no compute pass: per-ember floats baked CPU-side at `setModel` (count ∝ share, per-bar RNG seeded by
+  key hash so live polls don't pop), position a pure function of time. Camera: damped orbit (drag/wheel,
+  auto-orbit after idle, `prefers-reduced-motion` respected); `mat4.ts` is minimal column-major math with a
+  **WebGPU [0,1] clip-Z** perspective (unit-tested in `app/tools/mat4-check.ts`). Hover/click picking is CPU
+  ray-vs-AABB reconstructed from the camera basis (no matrix inverse), resolved freeze-consistently in the frame
+  loop; DOM labels track the bars via projected anchors (`transformPoint` → `ndcToPixel`). The right-docked
+  legend (`ui/FlameView.tsx`) stays the numeric truth (hover lights its row; click scrolls to it). Same
+  Opus-data → Fable-visual handoff as M2.
 
 ## Decisions & gotchas
 - **Closed-form vs compute for the cinema.** Chosen for simplicity + seamless looping; compute was already
