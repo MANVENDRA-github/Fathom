@@ -12,6 +12,7 @@ export interface RiverStats {
   cacheRate: number;    // 0..1
   fallbacks: number;
   pii: number;
+  costUsd: number;      // running cost total (M3 HUD anchor; reconciles with the flame graph)
   playFrac: number;     // 0..1 (replay only)
 }
 
@@ -72,7 +73,7 @@ export function createRiver(
   let pauseStart = 0;
   const capacity = opts.mode === 'live' ? (opts.capacity ?? 120_000) : 0;
   let cursor = 0;
-  const live = { requests: 0, cache: 0, fallbacks: 0, pii: 0 };
+  const live = { requests: 0, cache: 0, fallbacks: 0, pii: 0, cost: 0 };
   const pending: TraceEvent[] = [];
 
   // ---- pick index (M2 drill-down) --------------------------------------------
@@ -129,6 +130,7 @@ export function createRiver(
     activeHeadSlots.add(cursor);
     cursor += k;
     live.requests++;
+    live.cost += event.costUsd ?? 0;
     if (o === 'cache') live.cache++;
     else if (o === 'fallback') live.fallbacks++;
     else if (o === 'pii') live.pii++;
@@ -160,26 +162,28 @@ export function createRiver(
     if (opts.mode === 'replay') {
       const built = buildParticles(opts.trace);
       const { data, particles, N, counters, tScaled } = built;
+      const costs = built.heads.map((h) => h.event.costUsd ?? 0);   // per-event cost, index-aligned
       cycle = built.cycle;
       replayHeads = built.heads;   // static pick index for replay mode
       drawCount = particles;
       particleBuffer = device.createBuffer({ size: Math.max(PARTICLE_BYTES, data.byteLength), usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
       device.queue.writeBuffer(particleBuffer, 0, data);
       statsFn = (cycleT) => {
-        let requests = 0, cache = 0, fallbacks = 0, pii = 0;
+        let requests = 0, cache = 0, fallbacks = 0, pii = 0, cost = 0;
         for (let i = 0; i < N; i++) {
           if (tScaled[i] > cycleT) break;
           requests++;
+          cost += costs[i];
           const c = counters[i];
           if (c === 'cache') cache++; else if (c === 'fallback') fallbacks++; else if (c === 'pii') pii++;
         }
-        return { gpu: gpuLabel, live: false, requests, cacheRate: requests ? cache / requests : 0, fallbacks, pii, playFrac: cycleT / cycle };
+        return { gpu: gpuLabel, live: false, requests, cacheRate: requests ? cache / requests : 0, fallbacks, pii, costUsd: cost, playFrac: cycleT / cycle };
       };
     } else {
       cycle = LIVE_CYCLE;
       drawCount = capacity;
       particleBuffer = device.createBuffer({ size: capacity * PARTICLE_BYTES, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
-      statsFn = () => ({ gpu: gpuLabel, live: true, requests: live.requests, cacheRate: live.requests ? live.cache / live.requests : 0, fallbacks: live.fallbacks, pii: live.pii, playFrac: 0 });
+      statsFn = () => ({ gpu: gpuLabel, live: true, requests: live.requests, cacheRate: live.requests ? live.cache / live.requests : 0, fallbacks: live.fallbacks, pii: live.pii, costUsd: live.cost, playFrac: 0 });
     }
 
     const uniformBuffer = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
