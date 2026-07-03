@@ -10,7 +10,8 @@ real outcome: **cache hits** stream off as a cyan tributary, **429s** retry and 
 
 > Perf and the real-data look are proven (see [`PROOF.md`](./PROOF.md)); the v1 build is underway per
 > [`SPEC.md`](./SPEC.md). **Done: M0** (the app) **+ M1** (a generic OTLP live server — real sentinel spans
-> stream in as comets). **Next:** drill-down (flare → the real span), 3D cost flame graph, bloom, hosted demo.
+> stream in as comets) **+ M2** (drill-down — click a comet → its real span attributes via `GET /traces/:id`).
+> **Next:** 3D cost flame graph, bloom, hosted demo.
 
 ---
 
@@ -28,9 +29,10 @@ npm run build        # tsc -b + vite build -> app/dist
 node app/shot.mjs    # build first; screenshots the running app on the real GPU
 ```
 
-### 2. Live server — `server/` (M1)
+### 2. Live server — `server/` (M1/M2)
 Node + TypeScript: a **generic OTLP/HTTP receiver** (`POST /v1/traces`) → normalized mapper → ring buffer →
-**SSE `/stream`**. Any OTel gateway feeds it; sentinel via `OTEL_EXPORTER_OTLP_ENDPOINT`. Optional sentinel
+**SSE `/stream`**, plus **`GET /traces/:id`** for drill-down (a span's full detail incl. raw attributes; the
+stream stays lean). Any OTel gateway feeds it; sentinel via `OTEL_EXPORTER_OTLP_ENDPOINT`. Optional sentinel
 `/traces?since=` poller (judge scores) + file replay for the demo.
 
 ```bash
