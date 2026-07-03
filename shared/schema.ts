@@ -25,6 +25,19 @@ export interface TraceEvent {
   piiCategories: string[];
 }
 
+/**
+ * A `TraceEvent` plus the raw source attributes retained server-side for drill-down (M2).
+ * Returned by `GET /traces/:id`; the SSE stream deliberately sends the lean `TraceEvent`
+ * (no `attributes`/`name`) so high-frequency frames stay small and `/traces/:id` is the
+ * single source of truth for a span's real attributes.
+ */
+export interface SpanDetail extends TraceEvent {
+  /** span name (OTLP `span.name`, e.g. "chat.completion"). */
+  name?: string;
+  /** raw source attributes (`gen_ai.*`, `sentinel.*`, `http.*`, …), verbatim from the source. */
+  attributes?: Record<string, string | number | boolean>;
+}
+
 export interface TraceMeta {
   source: string;
   count: number;
