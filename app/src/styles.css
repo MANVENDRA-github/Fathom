@@ -48,30 +48,78 @@ body {
 .err { position: fixed; inset: 0; display: grid; place-items: center; z-index: 20; background: #04050a; padding: 40px; }
 .err div { max-width: 520px; color: #f38ba8; text-align: center; }
 
-/* --- M2 drill-down: span detail readout + click marker (minimal; Fable restyles) --- */
+/* --- M2 drill-down: span callout (Fable pass) --------------------------------
+   The panel is lit by the comet you caught: --accent is the outcome's hue (the same one
+   its lane and legend dot use), set inline by SpanDetail.tsx. A reticle marks the comet,
+   a leader line ties it to the card, and the card's top edge glows with that light. */
 .detail {
+  --accent: #3880ff;
   top: 22px; left: 50%; transform: translateX(-50%);
-  width: 360px; max-width: calc(100vw - 44px); max-height: 74vh; overflow-y: auto;
-  padding: 14px 16px; z-index: 12;
+  width: 384px; max-width: calc(100vw - 44px); max-height: 76vh; overflow-y: auto;
+  padding: 14px 16px 16px; z-index: 12;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  animation: detail-in 180ms ease-out 120ms backwards;
 }
-.detail-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.detail-head .x { background: none; border: none; color: #7f849c; cursor: pointer; font: inherit; padding: 0 2px; }
+/* opposite side from the picked comet, clamped clear of the HUD (left) / GPU title (right) */
+.detail.at-left { left: max(36%, 552px); }
+.detail.at-right { left: min(64%, calc(100% - 556px)); }
+.detail::before { /* the caught comet's light bleeding into the glass */
+  content: ''; position: absolute; inset: 0 0 auto 0; height: 90px; pointer-events: none;
+  border-radius: 12px 12px 0 0;
+  background: radial-gradient(62% 100% at 50% 0%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 72%);
+}
+.detail-head { display: flex; justify-content: space-between; align-items: center; position: relative; }
+.detail-head .x { background: none; border: none; color: #7f849c; cursor: pointer; font: inherit; padding: 0 2px; border-radius: 4px; }
 .detail-head .x:hover { color: #cdd6f4; }
-.detail-title { font-size: 13px; color: #cdd6f4; margin-bottom: 8px; word-break: break-all; }
-.detail .metric .v { font-size: 13px; color: #cdd6f4; }
-.detail .metric .v code { color: #a6adc8; }
-.otag { padding: 2px 8px; border-radius: 999px; font-size: 10px; border: 1px solid; }
-.otag.pii { color: #f38ba8; border-color: #f38ba8; }
-.otag.cache { color: #94e2d5; border-color: #94e2d5; }
-.otag.fallback { color: #fab387; border-color: #fab387; }
-.otag.span { color: #89b4fa; border-color: #89b4fa; }
-.detail-attrs { margin-top: 10px; border-top: 1px solid rgba(120, 160, 255, 0.14); padding-top: 8px; }
+.detail-head .x:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+.otag {
+  padding: 2px 9px; border-radius: 999px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.detail-title { font-size: 15px; color: #cdd6f4; margin: 8px 0 2px; word-break: break-all; position: relative; }
+
+.detail .sec { margin-top: 10px; position: relative; }
+.detail .eyebrow {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 3px;
+  font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: #7f849c;
+}
+.detail .eyebrow::after { content: ''; flex: 1; height: 1px; background: rgba(120, 160, 255, 0.12); }
+
+.detail .row { display: flex; justify-content: space-between; gap: 12px; padding: 2.5px 0; font-size: 12px; }
+.detail .row .k { color: #7f849c; }
+.detail .row .v { color: #cdd6f4; text-align: right; word-break: break-all; font-variant-numeric: tabular-nums; }
+.detail .row .v code { color: #a6adc8; }
+.detail .row .v.hot { color: var(--accent); text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 45%, transparent); }
+.detail .row .v.bad { color: #f38ba8; }
+
 .detail-attrs .muted { color: #7f849c; font-size: 11px; }
 .arow { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; font-size: 11px; }
-.arow .ak { color: #7f849c; word-break: break-all; }
-.arow .av { color: #a6adc8; text-align: right; word-break: break-all; }
+.arow .ak { color: #a6adc8; word-break: break-all; }
+.arow .ak .ns { color: #565b74; }
+.arow .av { color: #bac2de; text-align: right; word-break: break-all; font-variant-numeric: tabular-nums; }
 
-.pick-dot {
-  position: fixed; z-index: 11; width: 14px; height: 14px; margin: -7px 0 0 -7px;
-  border: 1.5px solid #f9e2af; border-radius: 50%; pointer-events: none; box-shadow: 0 0 10px #f9e2af;
+.reticle { position: fixed; z-index: 11; width: 18px; height: 18px; margin: -9px 0 0 -9px; pointer-events: none; }
+.reticle::before {
+  content: ''; position: absolute; inset: 0; border: 1.5px solid var(--accent); border-radius: 50%;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 70%, transparent);
+  animation: reticle-in 400ms ease-out backwards;
+}
+.reticle::after { content: ''; position: absolute; inset: 7px; background: var(--accent); border-radius: 50%; }
+
+.leader { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 11; }
+.leader line {
+  stroke: var(--accent); stroke-width: 1; opacity: 0.65;
+  stroke-dasharray: 1; stroke-dashoffset: 1;
+  animation: leader-draw 220ms ease-out 60ms forwards;
+}
+.leader circle { fill: var(--accent); opacity: 0.9; }
+
+@keyframes detail-in { from { opacity: 0; transform: translateX(-50%) translateY(-6px); } }
+@keyframes leader-draw { to { stroke-dashoffset: 0; } }
+@keyframes reticle-in { from { transform: scale(2.4); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .detail, .reticle::before { animation: none; }
+  .leader line { animation: none; stroke-dashoffset: 0; }
 }
