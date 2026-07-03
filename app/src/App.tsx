@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import type { NormalizedTrace, TraceMeta } from '@shared/schema';
-import { createRiver, type RiverHandle, type RiverStats } from './gpu/river';
+import type { NormalizedTrace, TraceMeta, SpanDetail as SpanDetailData } from '@shared/schema';
+import { createRiver, type RiverHandle, type RiverStats, type PickResult } from './gpu/river';
 import { hasWebGPU } from './gpu/capabilities';
 import { connectStream } from './lib/stream';
+import { fetchSpanDetail } from './lib/detail';
 import { Hud } from './ui/Hud';
 import { Legend } from './ui/Legend';
+import { SpanDetail } from './ui/SpanDetail';
 import { Controls, type SourceKey, REPLAY_FILES } from './ui/Controls';
 
 const SERVER = import.meta.env.VITE_FATHOM_SERVER || 'http://localhost:4319';
@@ -23,6 +25,9 @@ export default function App() {
   const [meta, setMeta] = useState<TraceMeta | null>(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<PickResult | null>(null);
+  const [detail, setDetail] = useState<SpanDetailData | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   useEffect(() => {
     if (!hasWebGPU()) { setError('WebGPU not available — use Chrome/Edge 113+.'); return; }
@@ -30,6 +35,7 @@ export default function App() {
     let cancelled = false;
     let disconnect: (() => void) | null = null;
     setStats(null); setMeta(null); setConnected(false);
+    setSelected(null); setDetail(null);   // clear any open drill-down when the source changes
 
     if (source === 'live') {
       const handle = createRiver(canvas, { mode: 'live' }, setStats);
@@ -71,11 +77,42 @@ export default function App() {
 
   const togglePause = () => setPaused((p) => { const n = !p; handleRef.current?.setPaused(n); return n; });
 
+  // Click a comet → resolve it to its span, then (live) fetch its raw attributes from /traces/:id.
+  const onCanvasPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const hit = handleRef.current?.pick(e.clientX, e.clientY) ?? null;
+    setSelected(hit);
+    setDetail(null);
+    if (hit && source === 'live' && hit.id) {
+      setDetailLoading(true);
+      fetchSpanDetail(SERVER, hit.id).then((d) => { setDetail(d); setDetailLoading(false); });
+    } else {
+      setDetailLoading(false);
+    }
+  };
+  const closeDetail = () => { setSelected(null); setDetail(null); };
+
+  // Test/debug hook (E2E pick harness): exposed only under ?debug=1 or in dev — keeps prod clean.
+  useEffect(() => {
+    if (!import.meta.env.DEV && !new URLSearchParams(location.search).has('debug')) return;
+    (window as unknown as Record<string, unknown>).__fathom = {
+      heads: () => handleRef.current?.debugHeads() ?? [],
+      pick: (x: number, y: number) => handleRef.current?.pick(x, y) ?? null,
+      pause: (p: boolean) => handleRef.current?.setPaused(p),
+    };
+    return () => { delete (window as unknown as Record<string, unknown>).__fathom; };
+  }, []);
+
   if (error) return <div className="err"><div>{error}</div></div>;
 
   return (
     <>
-      <canvas ref={canvasRef} id="gpu-canvas" />
+      <canvas ref={canvasRef} id="gpu-canvas" onPointerDown={onCanvasPointerDown} />
+      {selected && (
+        <>
+          <div className="pick-dot" style={{ left: selected.screen.x, top: selected.screen.y }} />
+          <SpanDetail event={selected.event} outcome={selected.outcome} detail={detail} loading={detailLoading} onClose={closeDetail} />
+        </>
+      )}
       <Hud stats={stats} meta={meta} source={source} connected={connected} />
       <div className="title-r panel">
         <div className="big">{stats?.gpu ?? 'initializing WebGPU…'}</div>

@@ -8,6 +8,7 @@ import { startPoller } from './poller';
  * Fathom server (M1): generic OTLP/HTTP receiver + SSE live stream.
  *   POST /v1/traces   OTLP/HTTP JSON  (point any OTel gateway here via OTEL_EXPORTER_OTLP_ENDPOINT)
  *   GET  /stream      Server-Sent Events: {type:'snapshot'|'span'|'judge'}
+ *   GET  /traces/:id  one span's full detail incl. raw attributes (M2 drill-down); 404 if evicted
  *   GET  /debug/recent?n=  the ring buffer as JSON (tests)
  *   GET  /health
  * Optional: REPLAY_FILE (demo), SENTINEL_TRACES_URL + SENTINEL_ADMIN_KEY (judge-score poller).
@@ -53,6 +54,19 @@ const server = createServer(async (req, res) => {
   }
 
   if (req.method === 'GET' && url.pathname === '/stream') { hub.addClient(res); return; }
+
+  if (req.method === 'GET' && url.pathname.startsWith('/traces/')) {
+    const id = decodeURIComponent(url.pathname.slice('/traces/'.length));
+    const detail = id ? hub.getById(id) : undefined;
+    if (!detail) {
+      res.writeHead(404, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: 'not found', id }));
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(detail));
+    return;
+  }
 
   if (req.method === 'GET' && url.pathname === '/debug/recent') {
     res.writeHead(200, { 'content-type': 'application/json' });

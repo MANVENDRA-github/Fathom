@@ -124,6 +124,26 @@ arrives (closed-form motion, `cycle` set large so there's no loop). Optional `po
 `/traces?since=` for LLM-judge scores (never on the OTLP span). Proven end-to-end incl. the real gateway
 (`PROOF.md` §4). Full design: `SPEC.md` §3–4.
 
+Endpoints: `POST /v1/traces`, `GET /stream`, `GET /traces/:id` (M2), `GET /debug/recent?n=`, `GET /health`.
+
+## Drill-down (M2 — pick math + `/traces/:id`)
+Clicking a comet resolves it to its source span, entirely from the shape the renderer already computes.
+
+- **Pick math (`gpu/motion.ts`).** Because comet motion is *closed-form* (a particle's clip-space center is a
+  pure function of its stored floats + `time`, no camera/projection), a screen click inverts back to a comet
+  on the CPU. `motion.ts` mirrors `river.wgsl:31-53` exactly — the `tau = (time-spawnT) mod cycle` wrap, the
+  `tau > life` cull, the eased-lane + turbulence `y` — and hit-tests in **pixel space**: the sprite is drawn
+  round in pixels (`off = (size, size*aspect)`), so its hit radius is `size*width/2` px and aspect cancels.
+  `pick()` nearest-wins over the visible **heads** (one per comet); it uses the last *rendered* `time`, so a
+  click on a paused (frozen) river lands on the still comet.
+- **Head index.** Replay builds a static `heads[]` (one head + source event per comet, `data/build.ts`); live
+  keeps heads in a ring parallel to the particle pool, evicted in lock-step as slots are overwritten
+  (`gpu/river.ts`). No per-particle id is stored in the GPU buffer — identity lives only in this CPU index.
+- **Detail path.** The SSE stream carries the lean `TraceEvent` (no raw attributes). On click the client shows
+  the normalized fields immediately, then (live only) fetches `GET /traces/:id` (`lib/detail.ts`) for the raw
+  `gen_ai.*`/`sentinel.*` attributes the server retained in its by-id map (`hub.ts`). Static replay data has no
+  ids/attributes, so it shows normalized fields only (labeled). Proven on the real GPU: `PROOF.md` §5.
+
 ## Decisions & gotchas
 - **Closed-form vs compute for the cinema.** Chosen for simplicity + seamless looping; compute was already
   proven in the spike, so the cinema didn't need it. Curl-noise flow would need compute (a v1 option).

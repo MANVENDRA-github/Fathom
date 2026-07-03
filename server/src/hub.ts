@@ -1,12 +1,23 @@
 import type { ServerResponse } from 'node:http';
-import type { TraceEvent, StreamMessage } from '../../shared/schema';
+import type { TraceEvent, SpanDetail, StreamMessage } from '../../shared/schema';
+
+/** The lean view sent over SSE: the normalized event WITHOUT the retained raw attributes/name. */
+function streamView(e: SpanDetail): TraceEvent {
+  const rest = { ...e };
+  delete (rest as Partial<SpanDetail>).attributes;
+  delete (rest as Partial<SpanDetail>).name;
+  return rest;
+}
 
 /**
  * The live core: a bounded ring buffer of recent spans + a set of SSE clients.
  * New clients get a `snapshot`, then every ingested span is broadcast as it arrives.
+ * Full spans (with raw attributes) are retained in `byId` for M2 drill-down (`GET /traces/:id`);
+ * the SSE stream carries only the lean `streamView` so frames stay small.
  */
 export class Hub {
-  private buf: TraceEvent[] = [];
+  private buf: SpanDetail[] = [];
+  private byId = new Map<string, SpanDetail>();
   private clients = new Set<ServerResponse>();
 
   constructor(private max = 2000) {
@@ -17,11 +28,16 @@ export class Hub {
   get size() { return this.buf.length; }
   get clientCount() { return this.clients.size; }
 
-  ingest(events: TraceEvent[]) {
+  ingest(events: SpanDetail[]) {
     for (const event of events) {
       this.buf.push(event);
-      if (this.buf.length > this.max) this.buf.shift();
-      this.broadcast({ type: 'span', event });
+      if (event.id) this.byId.set(event.id, event);   // last-write-wins (replay repeats ids)
+      if (this.buf.length > this.max) {
+        const evicted = this.buf.shift();
+        // only drop the index entry if it still points at the evicted object
+        if (evicted?.id && this.byId.get(evicted.id) === evicted) this.byId.delete(evicted.id);
+      }
+      this.broadcast({ type: 'span', event: streamView(event) });
     }
   }
 
@@ -29,8 +45,13 @@ export class Hub {
     this.broadcast({ type: 'judge', id, judgeScore });
   }
 
+  /** Full span (incl. raw attributes) by id, for drill-down. Undefined if evicted/unknown. */
+  getById(id: string): SpanDetail | undefined {
+    return this.byId.get(id);
+  }
+
   recent(n = 500): TraceEvent[] {
-    return this.buf.slice(-n);
+    return this.buf.slice(-n).map(streamView);
   }
 
   addClient(res: ServerResponse) {

@@ -1,4 +1,4 @@
-import type { TraceEvent, Guardrail } from '../../shared/schema';
+import type { SpanDetail, Guardrail } from '../../shared/schema';
 
 /**
  * OTLP/HTTP JSON → normalized TraceEvent[].
@@ -27,9 +27,12 @@ function attrValue(v?: OtlpValue): string | number | boolean | undefined {
   return undefined;
 }
 
-function attrMap(list?: OtlpAttr[]): Record<string, string | number | boolean | undefined> {
-  const m: Record<string, string | number | boolean | undefined> = {};
-  for (const a of list ?? []) m[a.key] = attrValue(a.value);
+function attrMap(list?: OtlpAttr[]): Record<string, string | number | boolean> {
+  const m: Record<string, string | number | boolean> = {};
+  for (const a of list ?? []) {
+    const v = attrValue(a.value);
+    if (v !== undefined) m[a.key] = v;
+  }
   return m;
 }
 
@@ -38,7 +41,7 @@ function nanoToMs(n?: string | number): number {
   return Number(BigInt(String(n).split('.')[0])) / 1e6;
 }
 
-export function spanToEvent(span: OtlpSpan): TraceEvent {
+export function spanToEvent(span: OtlpSpan): SpanDetail {
   const a = attrMap(span.attributes);
   const start = nanoToMs(span.startTimeUnixNano);
   const end = nanoToMs(span.endTimeUnixNano);
@@ -58,11 +61,14 @@ export function spanToEvent(span: OtlpSpan): TraceEvent {
     guardrail: (a['sentinel.guardrail_status'] ?? null) as Guardrail,
     pii: piiCategories.length > 0 || a['sentinel.guardrail_status'] === 'block',
     piiCategories,
+    // M2 drill-down: retain the source name + the full attribute map for GET /traces/:id.
+    name: span.name,
+    attributes: a,
   };
 }
 
-export function parseOtlp(body: OtlpBody): TraceEvent[] {
-  const out: TraceEvent[] = [];
+export function parseOtlp(body: OtlpBody): SpanDetail[] {
+  const out: SpanDetail[] = [];
   for (const rs of body.resourceSpans ?? [])
     for (const ss of rs.scopeSpans ?? [])
       for (const sp of ss.spans ?? [])

@@ -87,5 +87,16 @@ hub.addClient({ writeHead() {}, write(l: string) { const s = l.trim(); if (s.sta
 const lateSnap = late.find((m) => m.type === 'snapshot');
 check('late client snapshot has the backlog', !!lateSnap && lateSnap.type === 'snapshot' && lateSnap.events.length === Math.min(events.length, 500));
 
-console.log(`\n${failures === 0 ? 'OK' : failures + ' FAILURES'} — ${events.length} real spans through OTLP→map→Hub→SSE`);
+// 4. M2 drill-down: raw attributes are retained by id, but NOT streamed (lean SSE frames).
+const detail0 = hub.getById('0');   // spans were encoded with spanId String(i)
+check('getById returns the span', !!detail0 && detail0.id === '0');
+check('retained attributes are non-empty', !!detail0?.attributes && Object.keys(detail0.attributes).length > 0);
+check('status code preserved in raw attributes', Number(detail0?.attributes?.['http.response.status_code']) === events[0].status);
+check('span name retained', detail0?.name === 'chat.completion');
+check('unknown id → undefined (endpoint 404s)', hub.getById('does-not-exist') === undefined);
+const streamedSpan = spanMsgs.find((m) => m.type === 'span');
+const streamedHasAttrs = !!streamedSpan && streamedSpan.type === 'span' && 'attributes' in streamedSpan.event;
+check('SSE span frames omit raw attributes', streamedSpan != null && !streamedHasAttrs);
+
+console.log(`\n${failures === 0 ? 'OK' : failures + ' FAILURES'} — ${events.length} real spans through OTLP→map→Hub→SSE (+/traces/:id retention)`);
 process.exit(failures === 0 ? 0 : 1);
