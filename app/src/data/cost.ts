@@ -120,17 +120,68 @@ export function aggregateCost(events: TraceEvent[], metric: CostMetric = 'cost')
 }
 
 /**
+ * "$ saved by cache" estimator (M4 HUD counter). A cache hit spends ~$0, so what it *saved* is what
+ * the same call would have cost uncached. We estimate that from the data itself — no price table:
+ *
+ *   est. saved = Σ over cache-hit spans of mean(costUsd of PRICED NON-CACHE spans, same provider/model)
+ *
+ * Honesty: if the event set has no priced non-cache span at all (the real capture is costUsd-null
+ * everywhere), the estimate is `null` and the HUD shows "—", not a made-up number. A $0-priced
+ * local model honestly contributes $0. Sample cache hits carry costUsd:0 — the basis therefore
+ * uses non-cache spans only, or hits would poison the mean to zero.
+ */
+export interface SavedAcc {
+  basis: Map<string, { sum: number; n: number }>;   // priced non-cache spans per provider/model
+  hits: Map<string, number>;                         // cache hits per provider/model
+}
+
+export const newSavedAcc = (): SavedAcc => ({ basis: new Map(), hits: new Map() });
+
+export function accSaved(acc: SavedAcc, e: TraceEvent): void {
+  const key = `${e.provider ?? '?'}/${e.model ?? '?'}`;
+  if (e.cacheHit) {
+    acc.hits.set(key, (acc.hits.get(key) ?? 0) + 1);
+    return;
+  }
+  if (e.costUsd == null) return;
+  const b = acc.basis.get(key);
+  if (b) { b.sum += e.costUsd; b.n += 1; }
+  else acc.basis.set(key, { sum: e.costUsd, n: 1 });
+}
+
+/** Resolve the accumulator: `null` = unpriced data (no basis to estimate from). */
+export function savedOf(acc: SavedAcc): number | null {
+  if (acc.basis.size === 0) return null;
+  let saved = 0;
+  for (const [key, n] of acc.hits) {
+    const b = acc.basis.get(key);
+    if (b && b.n > 0) saved += n * (b.sum / b.n);
+  }
+  return saved;
+}
+
+/** One-shot estimator over a whole event set (pure; the flame/replay path). */
+export function estimateSaved(events: TraceEvent[]): number | null {
+  const acc = newSavedAcc();
+  for (const e of events) accSaved(acc, e);
+  return savedOf(acc);
+}
+
+/**
  * One-pass HUD summary over the same events (drives the HUD in flame view). Reuses `outcomeOf`, so
  * cache/fallback/pii match `river.ts` exactly, and `cost` matches `aggregateCost().totals.cost`.
+ * `savedUsd` uses the same accumulator as the river statsFns, so HUD === flame by construction.
  */
 export function summarize(events: TraceEvent[]) {
   let requests = 0, cache = 0, fallbacks = 0, pii = 0, cost = 0, tokens = 0;
+  const acc = newSavedAcc();
   for (const e of events) {
     requests++;
     cost += e.costUsd ?? 0;
     tokens += e.tokens ?? 0;
+    accSaved(acc, e);
     const o = outcomeOf(e);
     if (o === 'cache') cache++; else if (o === 'fallback') fallbacks++; else if (o === 'pii') pii++;
   }
-  return { requests, cacheRate: requests ? cache / requests : 0, fallbacks, pii, cost, tokens };
+  return { requests, cacheRate: requests ? cache / requests : 0, fallbacks, pii, cost, tokens, savedUsd: savedOf(acc) };
 }

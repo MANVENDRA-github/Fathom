@@ -3,7 +3,7 @@
 This repo is **Fathom**: a WebGPU "observability cinema" for LLM-ops telemetry (chosen as the
 flagship in a 2026 deep-research pass). It began as a feasibility spike to de-risk the two unknowns
 before committing to a v1 build — **both are now proven** — and has since become the seed of that
-v1 build (M0–M2 done; see `SPEC.md`):
+v1 build (M0–M4 done; see `SPEC.md`):
 
 1. **Perf** — can WebGPU sim+render ~1M span-particles at 60fps? → **proven GO** (see `PROOF.md`).
 2. **Real-data look** — do real `sentinel` spans render as a legible, striking river? → **yes** (see `fathom-river.png`).
@@ -24,7 +24,7 @@ v1 build (M0–M2 done; see `SPEC.md`):
 ## Layout
 | Path | Role |
 |---|---|
-| `app/` | **cinema** — Vite + React + TS; raw-WebGPU core `app/src/gpu/` (incl. `motion.ts` = pick math, M2), SSE client `app/src/lib/stream.ts`, shell `app/src/ui/` (incl. `SpanDetail.tsx`) |
+| `app/` | **cinema** — Vite + React + TS; raw-WebGPU core `app/src/gpu/` (incl. `motion.ts` = pick math mirroring `shaders/river-sim.wgsl` M2/M4 · `bloom.ts` = HDR bloom chain M4), SSE client `app/src/lib/stream.ts`, shell `app/src/ui/` (incl. `SpanDetail.tsx`) |
 | `app/public/traces.json` · `.sample.json` | trace data the app fetches in replay mode (copy of the root files) |
 | `server/` | **live server** (M1/M2) — OTLP receiver + SSE + `/traces/:id` (`src/otlp.ts`, `src/hub.ts`, `src/index.ts`); `tools/` = emit/live-demo/sentinel-otlp/pick-e2e checks; `e2e.ts` |
 | `app/tools/pick-check.ts` | M2 pick-math unit harness (mirrors the shader; no GPU) |
@@ -45,6 +45,7 @@ npm run app:install           # once — installs app/ deps (vite, react, ts)
 npm run dev                   # http://localhost:5173  (Vite dev; ?source=live|real|sample)
 npm run build                 # tsc -b + vite build -> app/dist
 node app/shot.mjs             # build first; screenshots the running app on the real GPU
+node app/perf.mjs             # build first; M4 per-pass GPU times (compute/scene/bloom, timestamp-query) -> app/m4-richness.png
 
 # live server (M1)  — point any OTel gateway's OTEL_EXPORTER_OTLP_ENDPOINT at http://localhost:4319/v1/traces
 npm run server:install        # once
@@ -110,6 +111,21 @@ on the 4070). Flame data comes from the loaded trace (replay/sample) or the serv
 (`GET /debug/recent`) in live mode; `?view=flame` deep-links. Real capture is `costUsd`-null (honest "unpriced"
 state → laid out by requests; use the tokens toggle); only `traces.sample.json` has real cost. Note a $0
 provider is a zero-width flame node on the cost metric — honestly absent from the scene, present in the legend.
-Still missing (v1): M4 richness (bloom/curl-noise), M5 hosted demo.
-**The v1 build plan is in [`SPEC.md`](./SPEC.md)** (milestones M0–M5). **Next: M4 (richness pass).**
+**M4 done (richness pass)**: river motion moved to a **stateless compute pass** (`gpu/shaders/river-sim.wgsl`)
+that adds an analytic divergence-free **curl-noise flow** — still a pure function of (floats, time), mirrored
+constant-for-constant in `motion.ts` (MIRROR blocks in both files; picks stay exact — pick-check 21/21,
+pick-e2e 8/8). A real **HDR bloom chain** (`gpu/bloom.ts` + `shaders/bloom.wgsl`: rgba16float scene →
+soft-knee threshold → mip chain → tent upsample → hue-preserving composite; `✦ bloom` UI toggle, default on;
+off = the exact pre-M4 path). **Model sub-streams** (`data/substream.ts`: FNV-1a `provider/model` →
+deterministic shade + y sub-band inside the outcome lane; legend hints "shade = model"). HUD gains
+**`est. $ saved (cache)`** — Σ over cache hits of the mean priced cost of the same model's non-cache spans
+(`data/cost.ts` `estimateSaved`; shared accumulator with both river statsFns, so river HUD = flame HUD by
+construction; honestly `—` on the `costUsd`-null real capture; cost-check 50/50). Perf measured on the
+shipping pipeline with `timestamp-query` (`node app/perf.mjs`, `?debug=1` gate): **0.106 ms median
+GPU/frame with bloom on** — 157× under the 16.7 ms budget on the 4070 (`PROOF.md` §7; artifact
+`app/m4-richness.png`, also the README hero). Curl samples global time → replay loops drift subtly within
+±0.02 NDC (documented caveat); the curl amplitude budget (jitter 0.03 + turb 0.035 + curl 0.015 = 0.080
+< 0.09 lane gap) is load-bearing — don't raise it without redoing the arithmetic (pick-check enforces).
+Still missing (v1): M5 hosted demo.
+**The v1 build plan is in [`SPEC.md`](./SPEC.md)** (milestones M0–M5). **Next: M5 (hosted demo + launch).**
 Decision context: vault note `next-flagship-project-research.md`.

@@ -6,9 +6,10 @@
  * No GPU, no browser — deterministic. The real-shader parity is proven by tools/pick-e2e.mjs.
  * (@shared imports in the graph are type-only, so tsx runs this without alias config.)
  */
-import { headPos, ndcToPixel, pickHead, MIN_HIT_PX, type HeadLike } from '../src/gpu/motion';
+import { headPos, ndcToPixel, pickHead, curl, MIN_HIT_PX, type HeadLike } from '../src/gpu/motion';
 import { buildParticles } from '../src/data/build';
 import { classify } from '../src/data/classify';
+import { modelHash, modelTint, subBandCenter } from '../src/data/substream';
 import type { NormalizedTrace, TraceEvent } from '../../shared/schema';
 
 const RECT = { width: 1600, height: 900 };
@@ -39,10 +40,33 @@ const dead = headPos(h.a, h.b, 6.5, cycle);   // tau = 6.5 > life 6
 check('past-life head is culled (null)', dead === null);
 check('culled head is not pickable', pickHead([h], px, py, 6.5, cycle, RECT) === null);
 
-// 3. Cycle wrap: the shader wraps tau into [0,cycle); position must repeat every `cycle`.
-const p0 = headPos(h.a, h.b, t, cycle)!;
-const p1 = headPos(h.a, h.b, t + 3 * cycle, cycle)!;
-check('position repeats across the loop', near(p0.x, p1.x) && near(p0.y, p1.y));
+// 3. Cycle wrap + curl composition. The sim wraps tau into [0,cycle) but samples the curl field
+//    with GLOBAL time (coherent flow), so across loops the position differs ONLY by the field's
+//    time drift. Recompute the base motion independently and assert headPos = base + curl(base)
+//    exactly at both times — this pins the wrap AND the exact composition the shader uses.
+{
+  const base = (tt: number) => {
+    // independent recomputation of river-sim.wgsl's base motion for head `h` (floats from mk() above)
+    const tau = tt - Math.floor(tt / cycle) * cycle;
+    const x = -1.0 + 0.3 * tau;
+    const ease = 0.1 + (0.0 - 0.1) * Math.exp(-3 * tau);
+    const turb = 0.022 * Math.sin(tau * 2.6 + 1.0) + 0.013 * Math.sin(tau * 6.1 + 1.7);
+    return { x, ease, turb };
+  };
+  const at = (tt: number) => {
+    const b0 = base(tt);
+    const d = curl(b0.x, b0.ease, tt);
+    return { x: b0.x + d.dx, y: b0.ease + b0.turb + d.dy };
+  };
+  const p0 = headPos(h.a, h.b, t, cycle)!;
+  const p1 = headPos(h.a, h.b, t + 3 * cycle, cycle)!;
+  const e0 = at(t);
+  const e1 = at(t + 3 * cycle);
+  check('headPos = base + curl(base) (composition, this loop)', near(p0.x, e0.x, 1e-6) && near(p0.y, e0.y, 1e-6));
+  check('headPos = base + curl(base) (composition, 3 loops later)', near(p1.x, e1.x, 1e-6) && near(p1.y, e1.y, 1e-6));
+  check('across loops the base repeats; only curl drifts (≤ bounds)',
+    Math.abs(p0.x - p1.x) <= 2 * 0.0190 && Math.abs(p0.y - p1.y) <= 2 * 0.0150);
+}
 
 // 4. Nearest wins: two heads on the same lane; a click near one selects THAT one.
 const hL = mk([0, 0.0, 0.02, 8], [-0.5, 0.0, 0.0, 0.0], 'L');
@@ -74,6 +98,53 @@ const laneOk = built.heads.every((head) => {
   return yTarget >= lane[0] - 0.06 && yTarget <= lane[1] + 0.06;   // yTarget = rnd(lane) + jitter(±0.03)
 });
 check('each head sits in its outcome lane band', laneOk);
+
+// 7. Curl field (M4): amplitude stays inside the lane-legibility budget everywhere on screen,
+//    and the field is divergence-free (it's the curl of a stream function — flow, not sources).
+{
+  let maxDx = 0, maxDy = 0, maxDiv = 0;
+  const EPS = 1e-4;
+  for (let xi = -1.2; xi <= 1.2; xi += 0.06) {
+    for (let yi = -0.7; yi <= 0.6; yi += 0.05) {
+      for (let ti = 0; ti <= 40; ti += 0.7) {
+        const d = curl(xi, yi, ti);
+        maxDx = Math.max(maxDx, Math.abs(d.dx));
+        maxDy = Math.max(maxDy, Math.abs(d.dy));
+        const ddx = (curl(xi + EPS, yi, ti).dx - curl(xi - EPS, yi, ti).dx) / (2 * EPS);
+        const ddy = (curl(xi, yi + EPS, ti).dy - curl(xi, yi - EPS, ti).dy) / (2 * EPS);
+        maxDiv = Math.max(maxDiv, Math.abs(ddx + ddy));
+      }
+    }
+  }
+  check(`curl |dx| bounded (${maxDx.toFixed(4)} < 0.0190) — lanes stay legible`, maxDx < 0.0190);
+  check(`curl |dy| bounded (${maxDy.toFixed(4)} < 0.0150) — lanes stay legible`, maxDy < 0.0150);
+  check(`curl field is divergence-free (max |div| ${maxDiv.toExponential(1)} < 1e-3)`, maxDiv < 1e-3);
+}
+
+// 8. Sub-streams (M4): model identity is deterministic, sub-bands stay strictly inside the lane,
+//    and tints stay valid colors in the outcome's hue family.
+{
+  const a1 = modelHash('openai', 'gpt-4o');
+  const a2 = modelHash('openai', 'gpt-4o');
+  const b1 = modelHash('anthropic', 'claude-sonnet-5');
+  check('modelHash is deterministic', a1.h1 === a2.h1 && a1.h2 === a2.h2);
+  check('distinct models get distinct identities', a1.h1 !== b1.h1 || a1.h2 !== b1.h2);
+  const lanes: [number, number][] = [[-0.5, -0.24], [0.18, 0.5], [-0.07, 0.09], [-0.62, -0.28]];
+  let bandOk = true, tintOk = true;
+  for (let i = 0; i < 500; i++) {
+    const id = modelHash(`p${i}`, `m${i % 7}`);
+    for (const lane of lanes) {
+      const w = lane[1] - lane[0];
+      const centre = subBandCenter(lane, id);
+      // worst-case comet scatter around the band centre is ±0.12·w (comet.ts)
+      if (centre - 0.12 * w < lane[0] || centre + 0.12 * w > lane[1]) bandOk = false;
+    }
+    const tint = modelTint([0.22, 0.5, 1.0], id);
+    if (tint.some((v) => v < 0 || v > 1)) tintOk = false;
+  }
+  check('sub-band + scatter stays strictly inside every lane', bandOk);
+  check('model tints stay valid colors', tintOk);
+}
 
 console.log(`\n${failures === 0 ? 'OK' : failures + ' FAILURES'} — pick math mirrors the shader (motion.ts) + build.ts heads`);
 process.exit(failures === 0 ? 0 : 1);

@@ -10,7 +10,7 @@ const LABELS: Record<SourceKey, string> = { live: '● live', real: 'real', samp
 const VIEW_LABELS: Record<ViewKey, string> = { river: 'river', flame: '$ flame' };
 
 export function Controls({
-  source, onSource, view, onView, paused, onPause,
+  source, onSource, view, onView, paused, onPause, bloom, onBloom,
 }: {
   source: SourceKey;
   onSource: (s: SourceKey) => void;
@@ -18,6 +18,8 @@ export function Controls({
   onView: (v: ViewKey) => void;
   paused: boolean;
   onPause: () => void;
+  bloom: boolean;
+  onBloom: () => void;
 }) {
   return (
     <div className="controls panel">
@@ -28,6 +30,7 @@ export function Controls({
       {(['river', 'flame'] as ViewKey[]).map((v) => (
         <button key={v} className={view === v ? 'active' : ''} onClick={() => onView(v)}>{VIEW_LABELS[v]}</button>
       ))}
+      {view === 'river' && <button className={bloom ? 'active' : ''} onClick={onBloom} title="bloom post pass (M4)">✦ bloom</button>}
       {view === 'river' && <button onClick={onPause}>{paused ? '▶ play' : '⏸ pause'}</button>}
     </div>
   );

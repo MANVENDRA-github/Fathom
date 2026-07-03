@@ -1,5 +1,6 @@
 import type { TraceEvent } from '@shared/schema';
 import { classify, type Outcome } from './classify';
+import { modelHash, modelTint, subBandCenter } from './substream';
 
 /** Upper bound on particles-per-comet, for sizing the live pool. */
 export const COMET_MAX = 140;
@@ -14,7 +15,11 @@ const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 export function makeComet(event: TraceEvent, spawnBase: number): number[] {
   const c = classify(event);
   const out: number[] = [];
-  const yT = rnd(c.lane[0], c.lane[1]);
+  // M4 sub-streams: this comet's model picks a deterministic shade + y sub-band within the lane.
+  const id = modelHash(event.provider, event.model);
+  const col = modelTint(c.col, id);
+  const laneW = c.lane[1] - c.lane[0];
+  const yT = subBandCenter(c.lane, id) + rnd(-0.12, 0.12) * laneW;
   const yS = yT + rnd(-0.05, 0.05) + (c.flare ? rnd(0.05, 0.12) : 0);
   const cometLife = c.life * rnd(0.9, 1.1);
   const vx = 2.35 / cometLife;
@@ -27,7 +32,7 @@ export function makeComet(event: TraceEvent, spawnBase: number): number[] {
     const alpha = c.alpha * (1 - 0.55 * trail);
     const jy = rnd(-0.03, 0.03);
     out.push(spawnT, vx, size, life, -1.14, yS + jy, yT + jy, rnd(0, 6.2831),
-      c.col[0], c.col[1], c.col[2], alpha);
+      col[0], col[1], col[2], alpha);
   }
   return out;
 }

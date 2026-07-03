@@ -13,6 +13,8 @@ import { FlameView, fmt } from './ui/FlameView';
 import { Controls, type SourceKey, type ViewKey, REPLAY_FILES } from './ui/Controls';
 
 const SERVER = import.meta.env.VITE_FATHOM_SERVER || 'http://localhost:4319';
+// Debug/harness gate (?debug=1 or dev): enables the __fathom hook and perf instrumentation.
+const DEBUG = import.meta.env.DEV || new URLSearchParams(location.search).has('debug');
 
 function initialSource(): SourceKey {
   const s = new URLSearchParams(location.search).get('source');
@@ -32,6 +34,7 @@ export default function App() {
   const [anchors, setAnchors] = useState<FlameAnchor[]>([]);
   const [hoverKey, setHoverKey] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
+  const [bloom, setBloom] = useState(true);
   const [stats, setStats] = useState<RiverStats | null>(null);
   const [meta, setMeta] = useState<TraceMeta | null>(null);
   const [connected, setConnected] = useState(false);
@@ -87,8 +90,9 @@ export default function App() {
         })();
       }
     } else if (source === 'live') {
-      const handle = createRiver(canvas, { mode: 'live' }, setStats);
+      const handle = createRiver(canvas, { mode: 'live', perf: DEBUG }, setStats);
       handle.setPaused(paused);
+      handle.setBloom(bloom);
       handleRef.current = handle;
       disconnect = connectStream(`${SERVER}/stream`, {
         onOpen: () => setConnected(true),
@@ -104,8 +108,9 @@ export default function App() {
           const trace = (await res.json()) as NormalizedTrace;
           if (cancelled) return;
           setMeta(trace.meta);
-          const handle = createRiver(canvas, { mode: 'replay', trace }, setStats);
+          const handle = createRiver(canvas, { mode: 'replay', trace, perf: DEBUG }, setStats);
           handle.setPaused(paused);
+          handle.setBloom(bloom);
           handleRef.current = handle;
         } catch (e) {
           if (!cancelled) setError(String(e));
@@ -130,7 +135,7 @@ export default function App() {
   const costModel = useMemo(() => aggregateCost(events ?? [], metric), [events, metric]);
   const flameStats = useMemo<RiverStats>(() => {
     const s = summarize(events ?? []);
-    return { gpu: 'WebGPU', live: source === 'live', requests: s.requests, cacheRate: s.cacheRate, fallbacks: s.fallbacks, pii: s.pii, costUsd: s.cost, playFrac: 0 };
+    return { gpu: 'WebGPU', live: source === 'live', requests: s.requests, cacheRate: s.cacheRate, fallbacks: s.fallbacks, pii: s.pii, costUsd: s.cost, savedUsd: s.savedUsd, playFrac: 0 };
   }, [events, source]);
   const hudStats = view === 'flame' ? flameStats : stats;
 
@@ -138,6 +143,7 @@ export default function App() {
   useEffect(() => { flameRef.current?.setModel(costModel); }, [costModel]);
 
   const togglePause = () => setPaused((p) => { const n = !p; handleRef.current?.setPaused(n); flameRef.current?.setPaused(n); return n; });
+  const toggleBloom = () => setBloom((b) => { const n = !b; handleRef.current?.setBloom(n); return n; });
   const changeView = (v: ViewKey) => { setSelected(null); setDetail(null); setView(v); };
 
   // Click a comet → resolve it to its span, then (live) fetch its raw attributes from /traces/:id.
@@ -157,11 +163,13 @@ export default function App() {
 
   // Test/debug hook (E2E harness): exposed only under ?debug=1 or in dev — keeps prod clean.
   useEffect(() => {
-    if (!import.meta.env.DEV && !new URLSearchParams(location.search).has('debug')) return;
+    if (!DEBUG) return;
     (window as unknown as Record<string, unknown>).__fathom = {
       heads: () => handleRef.current?.debugHeads() ?? [],
       pick: (x: number, y: number) => handleRef.current?.pick(x, y) ?? null,
       pause: (p: boolean) => { handleRef.current?.setPaused(p); flameRef.current?.setPaused(p); },
+      bloom: (on: boolean) => { handleRef.current?.setBloom(on); },
+      perf: (reset?: boolean) => handleRef.current?.perf(reset) ?? null,
       flamePick: (x: number, y: number) => flameRef.current?.pick(x, y) ?? null,
     };
     return () => { delete (window as unknown as Record<string, unknown>).__fathom; };
@@ -208,7 +216,7 @@ export default function App() {
         </div>
       </div>
       <Legend />
-      <Controls source={source} onSource={setSource} view={view} onView={changeView} paused={paused} onPause={togglePause} />
+      <Controls source={source} onSource={setSource} view={view} onView={changeView} paused={paused} onPause={togglePause} bloom={bloom} onBloom={toggleBloom} />
       {!flameView && source !== 'live' && (
         <div id="timeline"><div id="playhead" style={{ width: `${(stats?.playFrac ?? 0) * 100}%` }} /></div>
       )}

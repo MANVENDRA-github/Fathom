@@ -1,9 +1,10 @@
-// Pick math — a CPU mirror of the head-particle motion in `shaders/river.wgsl` (`vs`).
-// The renderer computes every particle's clip-space center as a *closed-form* function of its
-// stored floats + `u.time` (no camera, no projection). To resolve a click back to a comet we
-// evaluate the SAME function on the CPU for each comet's head and hit-test in pixel space.
+// Pick math — a CPU mirror of the head-particle motion in `shaders/river-sim.wgsl` (`cs`, the M4
+// stateless compute pass). The sim computes every particle's clip-space center as a *pure* function
+// of its stored floats + `u.time` (no integration, no camera). To resolve a click back to a comet
+// we evaluate the SAME function on the CPU for each comet's head and hit-test in pixel space.
 //
-// IMPORTANT: any change to the motion in `river.wgsl:31-53` MUST be mirrored here, or picks drift.
+// IMPORTANT: any change to the motion in `river-sim.wgsl` MUST be mirrored here, or picks drift
+// (on-GPU parity is proven by server/tools/pick-e2e.mjs).
 // Layout mirrored:  a = (spawnT, vx, size, life)   b = (x0, yStart, yTarget, phase)
 
 /** GLSL/WGSL smoothstep. */
@@ -12,6 +13,24 @@ function smoothstep(e0: number, e1: number, x: number): number {
   const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
   return t * t * (3 - 2 * t);
 }
+
+// ---- MIRROR: the curl-noise flow field — every constant matches river-sim.wgsl curl() exactly --
+// Divergence-free displacement d = (∂ψ/∂y, −∂ψ/∂x) of an analytic 3-octave stream function
+//   ψ = Σ Ai·sin(ai·x + wi·t)·cos(bi·y + vi·t),
+// sampled at the closed-form base position with GLOBAL time (neighbors swirl together).
+// Amplitude bounds (worst case): |dx| ≤ 0.0189, |dy| ≤ 0.0149 — inside the lane-legibility budget
+// (jitter 0.03 + turb 0.035 + curl 0.015 = 0.080 < the 0.09 cache↔fallback gap). The products
+// Ai·ai / Ai·bi are written as literals so both languages compute the identical expression.
+export function curl(cx: number, cy: number, t: number): { dx: number; dy: number } {
+  const dx = -0.00736 * Math.sin(1.7 * cx + 0.8 * t) * Math.sin(2.3 * cy - 0.6 * t)
+             -0.00611 * Math.sin(3.9 * cx - 1.3 * t) * Math.sin(4.7 * cy + 1.1 * t)
+             -0.00546 * Math.sin(7.3 * cx + 2.1 * t) * Math.sin(9.1 * cy - 1.7 * t);
+  const dy = -0.00544 * Math.cos(1.7 * cx + 0.8 * t) * Math.cos(2.3 * cy - 0.6 * t)
+             -0.00507 * Math.cos(3.9 * cx - 1.3 * t) * Math.cos(4.7 * cy + 1.1 * t)
+             -0.00438 * Math.cos(7.3 * cx + 2.1 * t) * Math.cos(9.1 * cy - 1.7 * t);
+  return { dx, dy };
+}
+// ---- /MIRROR -----------------------------------------------------------------------------------
 
 export interface HeadPos {
   x: number;      // clip-space (NDC) center, matches river.wgsl o.pos.xy
@@ -37,11 +56,12 @@ export function headPos(
   const x = x0 + vx * tau;
   const ease = yTarget + (yStart - yTarget) * Math.exp(-3 * tau);
   const turb = 0.022 * Math.sin(tau * 2.6 + phase) + 0.013 * Math.sin(tau * 6.1 + phase * 1.7);
-  const y = ease + turb;
+  const d = curl(x, ease, time);   // curl flow, sampled at the base position (river-sim.wgsl)
+  const y = ease + turb + d.dy;
 
   const fin = smoothstep(0, 0.12 * life, tau);
   const fout = 1 - smoothstep(0.5 * life, life, tau);
-  return { x, y, size, fade: fin * fout };
+  return { x: x + d.dx, y, size, fade: fin * fout };
 }
 
 export interface Rect { width: number; height: number; }

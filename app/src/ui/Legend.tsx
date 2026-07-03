@@ -14,6 +14,9 @@ export function Legend() {
           <span>{r.label}</span>
         </div>
       ))}
+      <div className="row" style={{ color: '#8b93a7' }}>
+        <span>shade within a lane = model</span>
+      </div>
     </div>
   );
 }

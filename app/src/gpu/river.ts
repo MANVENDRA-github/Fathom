@@ -1,9 +1,12 @@
 import type { NormalizedTrace, TraceEvent } from '@shared/schema';
 import { buildParticles, type ReplayHead } from '../data/build';
 import { makeComet, outcomeOf, COMET_MAX } from '../data/comet';
+import { accSaved, newSavedAcc, savedOf } from '../data/cost';
 import type { Outcome } from '../data/classify';
 import { pickHead, headPos, ndcToPixel, type HeadLike } from './motion';
 import riverWGSL from './shaders/river.wgsl?raw';
+import riverSimWGSL from './shaders/river-sim.wgsl?raw';
+import { createBloom } from './bloom';
 
 export interface RiverStats {
   gpu: string;
@@ -13,12 +16,32 @@ export interface RiverStats {
   fallbacks: number;
   pii: number;
   costUsd: number;      // running cost total (M3 HUD anchor; reconciles with the flame graph)
+  savedUsd: number | null;  // est. $ saved by cache hits (M4); null = unpriced data → HUD shows "—"
   playFrac: number;     // 0..1 (replay only)
 }
 
 export type RiverOpts =
-  | { mode: 'replay'; trace: NormalizedTrace }
-  | { mode: 'live'; capacity?: number };
+  | { mode: 'replay'; trace: NormalizedTrace; perf?: boolean }
+  | { mode: 'live'; capacity?: number; perf?: boolean };
+
+/** M4 perf snapshot — GPU pass times via timestamp-query when available, else frame pacing only. */
+export interface RiverPerf {
+  gpu: string;
+  timestampQuery: boolean;   // false = GPU numbers unavailable; trust frame pacing only
+  bloom: boolean;            // whether the bloom pass was active for these samples
+  samples: number;           // GPU timing samples collected
+  computeMs: number;         // medians
+  sceneMs: number;
+  bloomMs: number;
+  totalGpuMs: number;
+  computeP95: number;
+  sceneP95: number;
+  bloomP95: number;
+  totalP95: number;
+  frames: number;            // rAF pacing samples
+  frameAvgMs: number;
+  frameP95Ms: number;
+}
 
 /** Result of resolving a click to a comet (M2 drill-down). */
 export interface PickResult {
@@ -37,11 +60,16 @@ interface LiveHead extends HeadLike { event: TraceEvent; outcome: Outcome }
 export interface RiverHandle {
   destroy(): void;
   setPaused(paused: boolean): void;
+  /** Toggle the bloom post pass (M4). Off = render straight to the swapchain, exactly as pre-M4. */
+  setBloom(on: boolean): void;
   spawn(event: TraceEvent): void;   // live mode; no-op in replay
   /** Resolve a click (client px) to the comet under the cursor, or null. */
   pick(clientX: number, clientY: number): PickResult | null;
   /** Currently-visible heads with client-pixel centers (test/debug harnesses). */
   debugHeads(): DebugHead[];
+  /** Perf snapshot (perf opt only; null before samples exist). `reset` clears the sample rings —
+   *  use it when changing config (e.g. toggling bloom) so snapshots don't mix regimes. */
+  perf(reset?: boolean): RiverPerf | null;
 }
 
 const PARTICLE_FLOATS = 12;
@@ -61,7 +89,18 @@ export function createRiver(
 ): RiverHandle {
   let destroyed = false;
   let paused = false;
+  let bloomOn = true;
   let ready = false;
+  // ---- perf instrumentation (M4; opts.perf only) -------------------------------------------
+  const wantPerf = !!opts.perf;
+  let tsq = false;                 // timestamp-query granted
+  let gpuName = 'WebGPU';
+  let perfBloomFlag = true;        // bloom state when the last GPU sample was recorded
+  const ring = { compute: [] as number[], scene: [] as number[], bloom: [] as number[], total: [] as number[], frame: [] as number[] };
+  let lastFrameTs = 0;
+  const push = (a: number[], v: number) => { a.push(v); if (a.length > 600) a.shift(); };
+  const quant = (a: number[], p: number) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
+  const mean = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
   let raf = 0;
   let ro: ResizeObserver | null = null;
   let device: GPUDevice | null = null;
@@ -73,7 +112,7 @@ export function createRiver(
   let pauseStart = 0;
   const capacity = opts.mode === 'live' ? (opts.capacity ?? 120_000) : 0;
   let cursor = 0;
-  const live = { requests: 0, cache: 0, fallbacks: 0, pii: 0, cost: 0 };
+  const live = { requests: 0, cache: 0, fallbacks: 0, pii: 0, cost: 0, saved: newSavedAcc() };
   const pending: TraceEvent[] = [];
 
   // ---- pick index (M2 drill-down) --------------------------------------------
@@ -131,6 +170,7 @@ export function createRiver(
     cursor += k;
     live.requests++;
     live.cost += event.costUsd ?? 0;
+    accSaved(live.saved, event);
     if (o === 'cache') live.cache++;
     else if (o === 'fallback') live.fallbacks++;
     else if (o === 'pii') live.pii++;
@@ -139,21 +179,40 @@ export function createRiver(
   (async () => {
     const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
     if (!adapter || destroyed) return;
-    device = await adapter.requestDevice();
+    tsq = wantPerf && adapter.features.has('timestamp-query');
+    device = await adapter.requestDevice(tsq ? { requiredFeatures: ['timestamp-query' as GPUFeatureName] } : undefined);
     if (destroyed) { device.destroy(); return; }
 
     const info = adapter.info;
     const gpuLabel = [info?.description, info?.vendor, info?.architecture].filter(Boolean).join(' · ') || 'WebGPU';
+    gpuName = gpuLabel;
+
+    // Perf mode: 3 timestamp pairs — compute (0,1) · scene (2,3) · bloom (4,5) — resolved every
+    // 4th frame into a map-read buffer (one in flight at a time).
+    let qs: GPUQuerySet | null = null;
+    let qResolve: GPUBuffer | null = null;
+    let qRead: GPUBuffer | null = null;
+    let qPending = false;
+    if (tsq) {
+      qs = device.createQuerySet({ type: 'timestamp', count: 6 });
+      qResolve = device.createBuffer({ size: 6 * 8, usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC });
+      qRead = device.createBuffer({ size: 6 * 8, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    }
 
     const ctx = canvas.getContext('webgpu')!;
     const format = navigator.gpu.getPreferredCanvasFormat();
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    // The bloom chain is recreated at FRAME START on this flag — never inside the
+    // ResizeObserver callback (a resize mid-encode is the classic footgun).
+    let sizeDirty = true;
     const resize = () => {
       canvas.width = Math.max(1, Math.floor(canvas.clientWidth * dpr));
       canvas.height = Math.max(1, Math.floor(canvas.clientHeight * dpr));
+      sizeDirty = true;
     };
     resize();
     ctx.configure({ device, format, alphaMode: 'opaque' });
+    const bloom = createBloom(device, format);
 
     // ---- mode-specific particle buffer + stats ------------------------------
     let drawCount: number;
@@ -170,49 +229,88 @@ export function createRiver(
       device.queue.writeBuffer(particleBuffer, 0, data);
       statsFn = (cycleT) => {
         let requests = 0, cache = 0, fallbacks = 0, pii = 0, cost = 0;
+        const saved = newSavedAcc();
         for (let i = 0; i < N; i++) {
           if (tScaled[i] > cycleT) break;
           requests++;
           cost += costs[i];
+          accSaved(saved, built.heads[i].event);
           const c = counters[i];
           if (c === 'cache') cache++; else if (c === 'fallback') fallbacks++; else if (c === 'pii') pii++;
         }
-        return { gpu: gpuLabel, live: false, requests, cacheRate: requests ? cache / requests : 0, fallbacks, pii, costUsd: cost, playFrac: cycleT / cycle };
+        return { gpu: gpuLabel, live: false, requests, cacheRate: requests ? cache / requests : 0, fallbacks, pii, costUsd: cost, savedUsd: savedOf(saved), playFrac: cycleT / cycle };
       };
     } else {
       cycle = LIVE_CYCLE;
       drawCount = capacity;
       particleBuffer = device.createBuffer({ size: capacity * PARTICLE_BYTES, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
-      statsFn = () => ({ gpu: gpuLabel, live: true, requests: live.requests, cacheRate: live.requests ? live.cache / live.requests : 0, fallbacks: live.fallbacks, pii: live.pii, costUsd: live.cost, playFrac: 0 });
+      statsFn = () => ({ gpu: gpuLabel, live: true, requests: live.requests, cacheRate: live.requests ? live.cache / live.requests : 0, fallbacks: live.fallbacks, pii: live.pii, costUsd: live.cost, savedUsd: savedOf(live.saved), playFrac: 0 });
     }
 
+    // Uniform: (time f32, cycle f32, aspect f32, count u32) — one ArrayBuffer, two typed views,
+    // so the u32 count slot is never clobbered by a float write (spike pattern).
     const uniformBuffer = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-    const uArr = new Float32Array(4);
+    const uRaw = new ArrayBuffer(16);
+    const uF32 = new Float32Array(uRaw);
+    const uU32 = new Uint32Array(uRaw);
+    uU32[3] = drawCount;
+
+    // Per-particle sim output (x, y, size, alpha) written by the compute pass each frame.
+    const posBuffer = device.createBuffer({ size: drawCount * 16, usage: GPUBufferUsage.STORAGE });
+
+    // Compute: stateless motion sim (river-sim.wgsl; mirrored by motion.ts — see MIRROR blocks).
+    const simModule = device.createShaderModule({ code: riverSimWGSL });
+    const simBGL = device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+      ],
+    });
+    const simPipeline = device.createComputePipeline({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [simBGL] }),
+      compute: { module: simModule, entryPoint: 'cs' },
+    });
+    const simBindGroup = device.createBindGroup({
+      layout: simBGL,
+      entries: [
+        { binding: 0, resource: { buffer: particleBuffer } },
+        { binding: 1, resource: { buffer: uniformBuffer } },
+        { binding: 2, resource: { buffer: posBuffer } },
+      ],
+    });
+    const simWorkgroups = Math.ceil(drawCount / 64);
 
     const module = device.createShaderModule({ code: riverWGSL });
     const bgl = device.createBindGroupLayout({
       entries: [
         { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
         { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+        { binding: 2, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
       ],
     });
-    const pipeline = device.createRenderPipeline({
-      layout: device.createPipelineLayout({ bindGroupLayouts: [bgl] }),
+    // Two river pipelines from one module: bloom ON renders into the HDR scene target,
+    // bloom OFF renders straight to the swapchain exactly as pre-M4 (also the graceful path).
+    const makeRiverPipeline = (target: GPUTextureFormat) => device!.createRenderPipeline({
+      layout: device!.createPipelineLayout({ bindGroupLayouts: [bgl] }),
       vertex: { module, entryPoint: 'vs' },
       fragment: {
         module, entryPoint: 'fs',
-        targets: [{ format, blend: {
+        targets: [{ format: target, blend: {
           color: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
           alpha: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
         } }],
       },
       primitive: { topology: 'triangle-list' },
     });
+    const pipeline = makeRiverPipeline(format);
+    const pipelineHDR = makeRiverPipeline('rgba16float');
     const bindGroup = device.createBindGroup({
       layout: bgl,
       entries: [
-        { binding: 0, resource: { buffer: particleBuffer } },
+        { binding: 0, resource: { buffer: posBuffer } },
         { binding: 1, resource: { buffer: uniformBuffer } },
+        { binding: 2, resource: { buffer: particleBuffer } },
       ],
     });
 
@@ -224,23 +322,68 @@ export function createRiver(
     let frameNo = 0;
     const frame = () => {
       if (destroyed) return;
-      if (paused) { raf = requestAnimationFrame(frame); return; }
+      if (paused) { lastFrameTs = 0; raf = requestAnimationFrame(frame); return; }
+
+      if (wantPerf) {
+        const nowTs = performance.now();
+        if (lastFrameTs) push(ring.frame, nowTs - lastFrameTs);
+        lastFrameTs = nowTs;
+      }
 
       const time = elapsed();
       renderTime = time;   // freeze-consistent: pick()/debugHeads() evaluate the drawn frame
       const cycleT = time % cycle;
-      uArr[0] = time; uArr[1] = cycle; uArr[2] = canvas.width / canvas.height; uArr[3] = 0;
-      device!.queue.writeBuffer(uniformBuffer, 0, uArr);
+      uF32[0] = time; uF32[1] = cycle; uF32[2] = canvas.width / canvas.height;
+      device!.queue.writeBuffer(uniformBuffer, 0, uRaw);
+
+      if (sizeDirty) { bloom.resize(canvas.width, canvas.height); sizeDirty = false; }
+
+      const timing = !!qs && !qPending && (frameNo & 3) === 0;
+      const bloomThisFrame = bloomOn;
 
       const enc = device!.createCommandEncoder();
+      // Sim pass first: paused frames never reach here, so posBuffer stays frozen at renderTime —
+      // exactly the state pick()/debugHeads() evaluate.
+      const sim = enc.beginComputePass(
+        timing ? { timestampWrites: { querySet: qs!, beginningOfPassWriteIndex: 0, endOfPassWriteIndex: 1 } } : undefined);
+      sim.setPipeline(simPipeline);
+      sim.setBindGroup(0, simBindGroup);
+      sim.dispatchWorkgroups(simWorkgroups);
+      sim.end();
+      // Scene pass: into the HDR target when bloom is on (the clear ~0.04 lum stays far below the
+      // bloom threshold, so the background never glows), else straight to the swapchain.
+      const swapView = ctx.getCurrentTexture().createView();
       const pass = enc.beginRenderPass({
-        colorAttachments: [{ view: ctx.getCurrentTexture().createView(), clearValue: { r: 0.016, g: 0.02, b: 0.043, a: 1 }, loadOp: 'clear', storeOp: 'store' }],
+        colorAttachments: [{ view: bloomThisFrame ? bloom.sceneView() : swapView, clearValue: { r: 0.016, g: 0.02, b: 0.043, a: 1 }, loadOp: 'clear', storeOp: 'store' }],
+        ...(timing ? { timestampWrites: { querySet: qs!, beginningOfPassWriteIndex: 2, endOfPassWriteIndex: 3 } } : {}),
       });
-      pass.setPipeline(pipeline);
+      pass.setPipeline(bloomThisFrame ? pipelineHDR : pipeline);
       pass.setBindGroup(0, bindGroup);
       pass.draw(drawCount * 6);
       pass.end();
+      if (bloomThisFrame) bloom.encode(enc, swapView, timing ? { querySet: qs!, begin: 4, end: 5 } : undefined);
+      if (timing) {
+        enc.resolveQuerySet(qs!, 0, 6, qResolve!, 0);
+        enc.copyBufferToBuffer(qResolve!, 0, qRead!, 0, 48);
+      }
       device!.queue.submit([enc.finish()]);
+      if (timing) {
+        qPending = true;
+        qRead!.mapAsync(GPUMapMode.READ).then(() => {
+          const t = new BigUint64Array(qRead!.getMappedRange().slice(0));
+          qRead!.unmap();
+          const ms = (a: bigint, b: bigint) => Math.max(0, Number(b - a) / 1e6);
+          const computeMs = ms(t[0], t[1]);
+          const sceneMs = ms(t[2], t[3]);
+          const bloomMs = bloomThisFrame ? ms(t[4], t[5]) : 0;
+          push(ring.compute, computeMs);
+          push(ring.scene, sceneMs);
+          push(ring.bloom, bloomMs);
+          push(ring.total, computeMs + sceneMs + bloomMs);
+          perfBloomFlag = bloomThisFrame;
+          qPending = false;
+        }).catch(() => { qPending = false; });
+      }
 
       if ((frameNo++ & 7) === 0) onStats(statsFn(cycleT));
       raf = requestAnimationFrame(frame);
@@ -261,6 +404,7 @@ export function createRiver(
       ro?.disconnect();
       device?.destroy();
     },
+    setBloom(on: boolean) { bloomOn = on; },
     setPaused(p: boolean) {
       const now = performance.now();
       if (p && !paused) pauseStart = now;
@@ -281,6 +425,31 @@ export function createRiver(
       const pos = headPos(hit.a, hit.b, renderTime, cycle)!;   // non-null: pickHead already passed it
       const { px, py } = ndcToPixel(pos.x, pos.y, dims);
       return { id: hit.event.id, event: hit.event, outcome: hit.outcome, screen: { x: rect.left + px, y: rect.top + py } };
+    },
+    perf(reset = false): RiverPerf | null {
+      const has = ring.frame.length > 0 || ring.total.length > 0;
+      const out: RiverPerf | null = !has ? null : {
+        gpu: gpuName,
+        timestampQuery: tsq,
+        bloom: perfBloomFlag,
+        samples: ring.total.length,
+        computeMs: quant(ring.compute, 0.5),
+        sceneMs: quant(ring.scene, 0.5),
+        bloomMs: quant(ring.bloom, 0.5),
+        totalGpuMs: quant(ring.total, 0.5),
+        computeP95: quant(ring.compute, 0.95),
+        sceneP95: quant(ring.scene, 0.95),
+        bloomP95: quant(ring.bloom, 0.95),
+        totalP95: quant(ring.total, 0.95),
+        frames: ring.frame.length,
+        frameAvgMs: mean(ring.frame),
+        frameP95Ms: quant(ring.frame, 0.95),
+      };
+      if (reset) {
+        ring.compute.length = 0; ring.scene.length = 0; ring.bloom.length = 0;
+        ring.total.length = 0; ring.frame.length = 0; lastFrameTs = 0;
+      }
+      return out;
     },
     debugHeads(): DebugHead[] {
       if (!ready) return [];
