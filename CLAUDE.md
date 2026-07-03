@@ -100,12 +100,16 @@ real sentinel gateway exporting OTLP (`PROOF.md` §3–5). **M2**: click a comet
 attributes via `/traces/:id`; the pick is CPU math mirroring the shader (`app/src/gpu/motion.ts`); the detail
 UI (`SpanDetail.tsx`, Fable pass) is an outcome-lit callout — reticle on the comet, leader line to a card
 parked opposite it, lit in the outcome's lane color; sections mirror normalized-vs-raw (`SPEC.md` model policy).
-**M3 in progress — Opus half done**: a `river`↔`$ flame` view toggle; cost-by-provider→model aggregation
+**M3 done (both halves)**: a `river`↔`$ flame` view toggle; cost-by-provider→model aggregation
 (`app/src/data/cost.ts`, pure + tested) with a cost/tokens/requests toggle, reconciled with a new HUD `spend`
-metric on screen (`PROOF.md` §6). Flame data comes from the loaded trace (replay/sample) or the server's live
-ring buffer (`GET /debug/recent`) in live mode. The flame is a plain DOM breakdown (`FlameView.tsx`) — the
-correct-data seam; **Fable builds the 3D WGSL flame next**. Real capture is `costUsd`-null (honest "unpriced"
-state → laid out by requests; use the tokens toggle); only `traces.sample.json` has real cost.
-Still missing (v1): M3 Fable (3D WGSL flame), M4 richness (bloom/curl-noise), M5 hosted demo.
-**The v1 build plan is in [`SPEC.md`](./SPEC.md)** (milestones M0–M5). **Next: M3 Fable (3D flame), then M4.**
+metric on screen; rendered as a **3D WGSL scene** (`gpu/flame.ts` + `shaders/flame.wgsl` + `gpu/mat4.ts`):
+provider monoliths + stacked model bars extruded from the aggregation's `x0/x1` layout, closed-form embers
+rising with density ∝ share (no compute pass), damped orbit camera (drag/wheel; auto-orbit), CPU ray-AABB
+hover/click pick, DOM labels tracking bars via projected anchors, 4×MSAA + depth (`PROOF.md` §6; ~4.5 ms/frame
+on the 4070). Flame data comes from the loaded trace (replay/sample) or the server's live ring buffer
+(`GET /debug/recent`) in live mode; `?view=flame` deep-links. Real capture is `costUsd`-null (honest "unpriced"
+state → laid out by requests; use the tokens toggle); only `traces.sample.json` has real cost. Note a $0
+provider is a zero-width flame node on the cost metric — honestly absent from the scene, present in the legend.
+Still missing (v1): M4 richness (bloom/curl-noise), M5 hosted demo.
+**The v1 build plan is in [`SPEC.md`](./SPEC.md)** (milestones M0–M5). **Next: M4 (richness pass).**
 Decision context: vault note `next-flagship-project-research.md`.
