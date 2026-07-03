@@ -108,10 +108,10 @@ export default function App() {
     <>
       <canvas ref={canvasRef} id="gpu-canvas" onPointerDown={onCanvasPointerDown} />
       {selected && (
-        <>
-          <div className="pick-dot" style={{ left: selected.screen.x, top: selected.screen.y }} />
-          <SpanDetail event={selected.event} outcome={selected.outcome} detail={detail} loading={detailLoading} onClose={closeDetail} />
-        </>
+        <SpanDetail
+          event={selected.event} outcome={selected.outcome} screen={selected.screen}
+          live={source === 'live'} detail={detail} loading={detailLoading} onClose={closeDetail}
+        />
       )}
       <Hud stats={stats} meta={meta} source={source} connected={connected} />
       <div className="title-r panel">
