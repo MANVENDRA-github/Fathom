@@ -1,7 +1,8 @@
 import type { NormalizedTrace, TraceEvent } from '@shared/schema';
-import { buildParticles } from '../data/build';
+import { buildParticles, type ReplayHead } from '../data/build';
 import { makeComet, outcomeOf, COMET_MAX } from '../data/comet';
 import type { Outcome } from '../data/classify';
+import { pickHead, headPos, ndcToPixel, type HeadLike } from './motion';
 import riverWGSL from './shaders/river.wgsl?raw';
 
 export interface RiverStats {
@@ -18,10 +19,28 @@ export type RiverOpts =
   | { mode: 'replay'; trace: NormalizedTrace }
   | { mode: 'live'; capacity?: number };
 
+/** Result of resolving a click to a comet (M2 drill-down). */
+export interface PickResult {
+  id?: string;                    // span id (live spans; absent for id-less static replay data)
+  event: TraceEvent;              // the resolved source span
+  outcome: Outcome;
+  screen: { x: number; y: number };   // head center in client pixels (for the selection marker)
+}
+
+/** A visible head exposed for test/debug harnesses (client-pixel coords). */
+export interface DebugHead { id?: string; outcome: Outcome; x: number; y: number; size: number }
+
+/** A live comet's head + identity, kept in a ring parallel to the particle pool. */
+interface LiveHead extends HeadLike { event: TraceEvent; outcome: Outcome }
+
 export interface RiverHandle {
   destroy(): void;
   setPaused(paused: boolean): void;
   spawn(event: TraceEvent): void;   // live mode; no-op in replay
+  /** Resolve a click (client px) to the comet under the cursor, or null. */
+  pick(clientX: number, clientY: number): PickResult | null;
+  /** Currently-visible heads with client-pixel centers (test/debug harnesses). */
+  debugHeads(): DebugHead[];
 }
 
 const PARTICLE_FLOATS = 12;
@@ -55,6 +74,21 @@ export function createRiver(
   let cursor = 0;
   const live = { requests: 0, cache: 0, fallbacks: 0, pii: 0 };
   const pending: TraceEvent[] = [];
+
+  // ---- pick index (M2 drill-down) --------------------------------------------
+  // Hoisted so the returned pick()/debugHeads() can see them; filled during async init/spawn.
+  let cycle = 0;                       // loop length (uniform u.cycle); pick mirrors the shader
+  let renderTime = 0;                  // last time written to the uniform (frozen while paused)
+  let replayHeads: ReplayHead[] | null = null;   // replay: static, one head per comet
+  // live: heads kept in a ring parallel to the particle pool, evicted as slots are overwritten
+  const headSlots: (LiveHead | null)[] = opts.mode === 'live' ? new Array(capacity).fill(null) : [];
+  const activeHeadSlots = new Set<number>();
+  const liveHeadList = (): LiveHead[] => {
+    const out: LiveHead[] = [];
+    for (const s of activeHeadSlots) { const h = headSlots[s]; if (h) out.push(h); }
+    return out;
+  };
+  const pickHeads = (): (LiveHead | ReplayHead)[] => replayHeads ?? liveHeadList();
   // Dedup by span id: an SSE reconnect re-sends the snapshot, which must NOT re-spawn or
   // double-count already-seen spans (that would silently inflate the HUD's headline metrics).
   // Bounded to the last N ids — only the recent snapshot window can ever duplicate.
@@ -80,10 +114,21 @@ export function createRiver(
     const floats = makeComet(event, elapsed());
     const k = floats.length / PARTICLE_FLOATS;
     if (cursor + k > capacity) cursor = 0;
+    // Evict heads whose particles are about to be overwritten (keeps the pick ring in lock-step).
+    for (let s = cursor; s < cursor + k; s++) {
+      if (headSlots[s]) { activeHeadSlots.delete(s); headSlots[s] = null; }
+    }
     device.queue.writeBuffer(particleBuffer, cursor * PARTICLE_BYTES, new Float32Array(floats));
+    const o: Outcome = outcomeOf(event);
+    // Record this comet's head (leading particle at `cursor`) for drill-down.
+    headSlots[cursor] = {
+      a: Float32Array.of(floats[0], floats[1], floats[2], floats[3]),
+      b: Float32Array.of(floats[4], floats[5], floats[6], floats[7]),
+      event, outcome: o,
+    };
+    activeHeadSlots.add(cursor);
     cursor += k;
     live.requests++;
-    const o: Outcome = outcomeOf(event);
     if (o === 'cache') live.cache++;
     else if (o === 'fallback') live.fallbacks++;
     else if (o === 'pii') live.pii++;
@@ -110,13 +155,13 @@ export function createRiver(
 
     // ---- mode-specific particle buffer + stats ------------------------------
     let drawCount: number;
-    let cycle: number;
     let statsFn: (cycleT: number) => RiverStats;
 
     if (opts.mode === 'replay') {
       const built = buildParticles(opts.trace);
       const { data, particles, N, counters, tScaled } = built;
       cycle = built.cycle;
+      replayHeads = built.heads;   // static pick index for replay mode
       drawCount = particles;
       particleBuffer = device.createBuffer({ size: Math.max(PARTICLE_BYTES, data.byteLength), usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
       device.queue.writeBuffer(particleBuffer, 0, data);
@@ -178,6 +223,7 @@ export function createRiver(
       if (paused) { raf = requestAnimationFrame(frame); return; }
 
       const time = elapsed();
+      renderTime = time;   // freeze-consistent: pick()/debugHeads() evaluate the drawn frame
       const cycleT = time % cycle;
       uArr[0] = time; uArr[1] = cycle; uArr[2] = canvas.width / canvas.height; uArr[3] = 0;
       device!.queue.writeBuffer(uniformBuffer, 0, uArr);
@@ -221,6 +267,29 @@ export function createRiver(
       if (opts.mode !== 'live') return;
       if (!ready) { pending.push(event); return; }
       writeComet(event);
+    },
+    pick(clientX: number, clientY: number): PickResult | null {
+      if (!ready) return null;
+      const rect = canvas.getBoundingClientRect();
+      const dims = { width: rect.width, height: rect.height };
+      const hit = pickHead(pickHeads(), clientX - rect.left, clientY - rect.top, renderTime, cycle, dims);
+      if (!hit) return null;
+      const pos = headPos(hit.a, hit.b, renderTime, cycle)!;   // non-null: pickHead already passed it
+      const { px, py } = ndcToPixel(pos.x, pos.y, dims);
+      return { id: hit.event.id, event: hit.event, outcome: hit.outcome, screen: { x: rect.left + px, y: rect.top + py } };
+    },
+    debugHeads(): DebugHead[] {
+      if (!ready) return [];
+      const rect = canvas.getBoundingClientRect();
+      const dims = { width: rect.width, height: rect.height };
+      const out: DebugHead[] = [];
+      for (const h of pickHeads()) {
+        const pos = headPos(h.a, h.b, renderTime, cycle);
+        if (!pos || pos.fade < 0.05) continue;
+        const { px, py } = ndcToPixel(pos.x, pos.y, dims);
+        out.push({ id: h.event.id, outcome: h.outcome, x: rect.left + px, y: rect.top + py, size: pos.size });
+      }
+      return out;
     },
   };
 }
