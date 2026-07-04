@@ -284,6 +284,43 @@ curl flow, model sub-streams, `est. $ saved (cache) —` honest unpriced state).
 
 ---
 
+## 8. M5 — hosted demo build + capture (Opus half)
+The public demo is the static `app/dist` on **GitHub Pages** (CI-built), running `?source=real` — the
+labeled client-side replay, no server. Deploy config: `.github/workflows/deploy.yml` (build → Pages on
+`main`) + `ci.yml` (PR build gate). URL: `https://manvendra-github.github.io/Fathom/`.
+
+**(a) Build is green and the bundle is subpath-safe** (`base:'./'` → relative asset URLs, so it works
+under `/Fathom/` on Pages and at root for the recorder):
+```bash
+npm run build
+#   tsc -b && vite build — ✓ 51 modules transformed, built in 2.53s
+#   dist/index.html  0.42 kB   dist/assets/index-*.css  8.41 kB   dist/assets/index-*.js  253.39 kB (gzip 81.74)
+#   dist/index.html references ./assets/index-*.js  ./assets/index-*.css   (relative — base:'./' took)
+#   dist/ also carries traces.json (88,309 B) + traces.sample.json  (client-side replay, no server)
+```
+
+**(b) Demo clip captured on the real GPU** (`app/record.mjs` → serve dist → Chrome
+`--force_high_performance_gpu` → `[fathom]` ready → `?source=real` → `recordVideo` → ffmpeg):
+```bash
+npm run app:record
+#   [record] serving app/dist at http://localhost:8976  source=real
+#   [page] [fathom] replay mode · 24,982 particles · nvidia · lovelace
+#   [record] hero still -> fathom-demo.png
+#   [record] video -> fathom-demo.webm
+#   [record] ffmpeg -> fathom-demo.mp4, fathom-demo.gif
+#   artifacts: fathom-demo.gif 6.69 MB (760×428, 128 frames, ~30fps) · fathom-demo.mp4 5.32 MB ·
+#              fathom-demo.webm 3.52 MB · fathom-demo.png 0.42 MB
+```
+`fathom-demo.gif` is the README hero (git-tracked); `webm`/`mp4` are gitignored (regenerable; the mp4 is
+uploaded directly at launch). The clip is a **real capture, replayed** — the HUD reads "requests replayed"
+and the panel says "replayed as a live stream" (honest, no manipulation beyond replay-order interleaving).
+
+**M5 Opus exit criterion met:** the static replay demo builds and deploys via CI to a public URL, and the
+README autoplay GIF is captured from the shipping bundle on the 4070. GIF is ~30fps for size; the demo
+*runs* at 60fps (§7). Remaining (Fable half): README hero copy + public-demo polish + launch.
+
+---
+
 ## Claim → evidence
 | Claim | Evidence |
 |---|---|
@@ -295,6 +332,8 @@ curl flow, model sub-streams, `est. $ saved (cache) —` honest unpriced state).
 | Ingestion is source-agnostic | renderer consumes only the normalized schema (`ARCHITECTURE.md`) |
 | Richness pass holds 60fps | `node app/perf.mjs` → 0.106 ms median GPU with bloom on (157× headroom, §7) |
 | Picks survive curl-noise motion | pick-check 21/21 (curl bounds + divergence) + pick-e2e 8/8 on the real GPU |
+| Hosted demo builds + deploys | `npm run build` green → `app/dist` (subpath-safe, `base:'./'`) → GitHub Pages via CI (§8) |
+| Demo clip is real, captured on GPU | `npm run app:record` → `fathom-demo.gif` on nvidia·lovelace, `?source=real` (real capture, replayed — §8) |
 
 ## Honest caveats
 - Benchmark FPS is vsync-capped (240 Hz) — the **GPU ms** column is the real headroom signal, not FPS.

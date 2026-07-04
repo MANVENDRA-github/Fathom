@@ -94,10 +94,13 @@ receiver and the poller are just two mappers to it.
    back the pixel under the cursor). Ship the spatial hash; document the ID-buffer path for scale.
 3. **3D cost flame graph** — a second mode aggregating token/$ cost by `provider → model → outcome` as a rotating
    3D flame/treemap (WebGPU instanced boxes), reading the same ring buffer. Answers "where does the money go."
-4. **Hosted public demo** — deploy the static client + the Node server (SSE needs a live process):
-   **Fly.io or Render** for server+SSE (Cloudflare Pages is static-only; a Worker+Durable Object is the advanced
-   alt). Demo runs **replay** of a captured trace (clearly labeled) or a sandboxed demo gateway. A clickable live
-   link is the retention hook the research calls out.
+4. **Hosted public demo** — **shipped (Opus half):** the static client is deployed to **GitHub Pages** via
+   CI (`.github/workflows/deploy.yml` builds `app/dist` on push to `main`; `ci.yml` gates PRs). The demo runs
+   `?source=real` — the **labeled client-side replay**, no server needed (Vite `base:'./'` so it works under
+   the Pages subpath). URL: `https://manvendra-github.github.io/Fathom/`. **Deferred:** hosting the Node
+   server for public `?source=live` (SSE needs a live process — **Fly.io/Render**; Cloudflare Pages is
+   static-only, a Worker+Durable Object is the advanced alt). A clickable live link is the retention hook the
+   research calls out.
 5. **Richness pass** — bloom (downsample→blur→add post pass), curl-noise flow (compute pass — reuse the spike's
    proven compute path), model-colored sub-streams within a lane, and live counters ($ saved, cache-hit %,
    PII caught) driven by the ring buffer.
@@ -121,7 +124,7 @@ Restructuring is **M0 work**, not done in this spec turn.
 | **M2 ✅ done** | Drill-down | ✅ clicking a comet opens the correct span's real attributes, reconciled against `GET /traces/:id` on the real GPU (see `PROOF.md` §5); pick is CPU math mirroring the shader (`app/src/gpu/motion.ts`) | **Opus** (pick math, `/traces/:id`, wiring) ✅; **Fable** (attribute-panel UI — outcome-lit callout card: reticle + leader line, card parked opposite the comet) ✅ |
 | **M3 ✅ done** | 3D cost flame graph | ✅ toggle + cost-by-model/provider from the live buffer, reconciles with the HUD on screen; rendered as a **3D WGSL scene** (orbiting monoliths + embers, 4.5 ms/frame — `PROOF.md` §6) | **Opus** (cost aggregation + toggle + reconciliation) ✅; **Fable** (3D WGSL flame: monoliths, embers, orbit camera, ray pick, tracked DOM labels) ✅ |
 | **M4 ✅ done** | Richness pass | ✅ bloom (HDR post chain + toggle) + curl-noise (stateless compute pass, pick mirror intact) + model sub-streams + `est. $ saved` counter — measured at **0.106 ms GPU/frame** with bloom on (157× headroom, `timestamp-query`; see `PROOF.md` §7) | **Fable** (curl field, bloom look, sub-streams) ✅; **Opus** (perf measurement, $-saved honesty, pick-mirror integrity) ✅ |
-| **M5** | Hosted demo + launch | Public URL runs labeled replay at 60fps; README autoplay GIF + honest headline number; ready for HN/X | **Fable** for the README hero + public-demo polish; **Opus** for deploy/CI config + GIF capture |
+| **M5 🚧 in progress** | Hosted demo + launch | **Opus half ✅:** static replay demo deployed to **GitHub Pages** via CI (`deploy.yml` builds `app/dist` on `main`, `ci.yml` gates PRs; `?source=real`, `base:'./'`), README autoplay GIF captured on the 4070 (`app/fathom-demo.gif`, real-capture-replayed, `PROOF.md` §8). **Fable half:** README hero copy + public-demo polish; **launch** (X/HN) pending | **Opus** (deploy/CI config + GIF capture) ✅; **Fable** (README hero + public-demo polish) — pending |
 
 **Model policy** (Opus + Fable only): **Fable** for anything people *look at* (shaders, viz, UI polish, launch surface); **Opus** for anything that must be *provably correct* (pick math, cost reconciliation, OTLP mapping) and all plumbing/tests/doc-sync. Highest-value Fable milestone: **M4**. Don't drop below Opus on **M3's aggregation** — a wrong cost number undercuts the "money deserves to be seen" pitch.
 

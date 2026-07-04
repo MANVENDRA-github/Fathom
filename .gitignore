@@ -15,6 +15,9 @@ app/m3-flame-real.png
 *.webm
 *.mp4
 *.gif
+# ...but keep the M5 demo hero gif tracked (README autoplay). webm/mp4 stay ignored
+# (regenerable via `npm run app:record`; the mp4 is uploaded directly at launch).
+!app/fathom-demo.gif
 
 # dev-only sample render (the synthetic sample; keep the *real* hero pngs tracked)
 cinema-sample.png

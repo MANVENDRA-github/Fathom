@@ -32,7 +32,9 @@ v1 build (M0–M4 done; see `SPEC.md`):
 | `spike/` | perf spike + benchmark (`index.html`, `main.js`, `bench.mjs`, `river-1M.png`) |
 | `ingest.mjs` | sentinel `TraceRecord[]` → normalized schema (the mapper to port into `server/`) |
 | `synth-traces.mjs` | schema-faithful *synthetic* sample (dev only; clearly labeled in-app) |
-| `record.mjs` | Playwright capture → hero `.png` + `.webm` (+ `.mp4`/`.gif` if ffmpeg) |
+| `record.mjs` | Playwright capture → hero `.png` + `.webm` (+ `.mp4`/`.gif` if ffmpeg) — the **legacy** `fathom.html` |
+| `app/record.mjs` | M5 demo-clip recorder for the **new** `app/dist` (serves dist, `[fathom]`-ready, `?source=real`, `recordVideo`+ffmpeg) → `app/fathom-demo.{gif,mp4,webm,png}` (gif tracked; webm/mp4 gitignored) |
+| `.github/workflows/deploy.yml` · `ci.yml` | M5 CI: `deploy.yml` builds `app/dist` → **GitHub Pages** on `main`; `ci.yml` = PR build gate |
 | `tools/sentinel-dump.ts` | reference capture script (copy into `<sentinel>/load/`, run, delete) |
 | `data/` | captured raw trace records (gitignored) |
 | `fathom.html` · `fathom.js` | **legacy** standalone cinema (superseded by `app/`; kept for `record.mjs`) |
@@ -46,6 +48,11 @@ npm run dev                   # http://localhost:5173  (Vite dev; ?source=live|r
 npm run build                 # tsc -b + vite build -> app/dist
 node app/shot.mjs             # build first; screenshots the running app on the real GPU
 node app/perf.mjs             # build first; M4 per-pass GPU times (compute/scene/bloom, timestamp-query) -> app/m4-richness.png
+npm run app:record            # build first; M5 demo clip (webm+mp4+gif) on the real GPU -> app/fathom-demo.* (ffmpeg for gif/mp4; FFMPEG=<path> if not on PATH)
+
+# hosted demo (M5)  — the deploy is CI-driven; push to main triggers .github/workflows/deploy.yml -> GitHub Pages
+#   one-time: repo Settings -> Pages -> Source = "GitHub Actions"; demo runs ?source=real (labeled replay, no server)
+#   URL: https://manvendra-github.github.io/Fathom/
 
 # live server (M1)  — point any OTel gateway's OTEL_EXPORTER_OTLP_ENDPOINT at http://localhost:4319/v1/traces
 npm run server:install        # once
@@ -126,6 +133,15 @@ GPU/frame with bloom on** — 157× under the 16.7 ms budget on the 4070 (`PROOF
 `app/m4-richness.png`, also the README hero). Curl samples global time → replay loops drift subtly within
 ±0.02 NDC (documented caveat); the curl amplitude budget (jitter 0.03 + turb 0.035 + curl 0.015 = 0.080
 < 0.09 lane gap) is load-bearing — don't raise it without redoing the arithmetic (pick-check enforces).
-Still missing (v1): M5 hosted demo.
-**The v1 build plan is in [`SPEC.md`](./SPEC.md)** (milestones M0–M5). **Next: M5 (hosted demo + launch).**
+**M5 in progress (hosted demo — Opus half done)**: the static replay demo is deployed to **GitHub Pages**
+via CI — `.github/workflows/deploy.yml` builds `app/dist` and publishes on every push to `main`
+(`ci.yml` gates PRs). The demo runs `?source=real` — the **labeled client-side replay**, no server (live
+SSE mode is deferred). Vite `base` is now **`'./'`** (relative) so the bundle works under the Pages subpath
+*and* at local root (the recorder serves `dist` at root). The **README hero is now an animated GIF**
+(`app/fathom-demo.gif`, tracked) captured by `app/record.mjs` on the 4070 (real capture, replayed — the HUD
+says so); `webm`/`mp4` are gitignored (regenerable; mp4 uploaded at launch). GIF is ~30fps for size; the
+demo *runs* at 60fps. One-time manual step: repo **Settings → Pages → Source = GitHub Actions**. URL:
+`https://manvendra-github.github.io/Fathom/`. Still missing (M5, Fable half): README hero copy + public-demo
+visual polish + launch (X/HN). Deferred: hosting the Node OTLP+SSE server for public `?source=live`.
+**The v1 build plan is in [`SPEC.md`](./SPEC.md)** (milestones M0–M5). **Next: finish M5 (Fable polish + launch).**
 Decision context: vault note `next-flagship-project-research.md`.
