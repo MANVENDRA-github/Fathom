@@ -4,10 +4,9 @@ dist/
 *.tsbuildinfo
 app/m0-app.png
 app/m1-live.png
-app/m2-drill.png
 app/m3-cost.png
-app/m3-flame.png
 app/m3-flame-real.png
+# (m2-drill.png + m3-flame.png are tracked — they illustrate the README's drill-down/flame sections)
 
 # capture / render working dirs + large media (regenerable)
 .rec/

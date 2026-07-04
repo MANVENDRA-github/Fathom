@@ -5,7 +5,7 @@ const ROWS: Array<{ color: string; label: string }> = [
   { color: '#ff3040', label: 'PII caught — blocked in-path (422)' },
 ];
 
-export function Legend() {
+export function Legend({ view }: { view: 'river' | 'flame' }) {
   return (
     <div className="legend panel">
       {ROWS.map((r) => (
@@ -17,6 +17,11 @@ export function Legend() {
       <div className="row" style={{ color: '#8b93a7' }}>
         <span>shade within a lane = model</span>
       </div>
+      {view === 'river' && (
+        <div className="row hint">
+          <span>click a comet → its span</span>
+        </div>
+      )}
     </div>
   );
 }

@@ -8,7 +8,7 @@
  * ready signal, and drives ?source=<real|sample> — the labeled client-side replay (HUD reads
  * "requests replayed"), i.e. real captured sentinel spans, replayed. No manipulation beyond that.
  *
- * The gif is ~30fps for size; the demo itself runs at 60fps (PROOF.md §7) and the .mp4/.webm carry
+ * The gif is ~16fps for size; the demo itself runs at 60fps (PROOF.md §7) and the .mp4/.webm carry
  * the full framerate. Windows: powerPreference is ignored (crbug/369219127) —
  * --force_high_performance_gpu selects the discrete GPU (the RTX 4070 on the dev box).
  */
@@ -69,11 +69,14 @@ try {
   if (hasFfmpeg) {
     const mp4 = join(DIR, `${PREFIX}.mp4`);
     spawnSync(FFMPEG, ['-y', '-i', webm, '-movflags', '+faststart', '-pix_fmt', 'yuv420p', '-vf', 'scale=1280:-2', mp4], { stdio: 'ignore' });
+    // README-hero recipe: dense full-screen particle motion is worst-case for gif, so trade
+    // framerate/size for weight — 16fps · 760px · 128 colors · 8s keeps it ~6-7 MB (GitHub-friendly).
+    // The .mp4/.webm carry the full framerate; the README states the gif is ~16fps.
     const pal = join(DIR, `${PREFIX}.pal.png`);
-    const gifVf = 'fps=30,scale=1000:-1:flags=lanczos';
-    spawnSync(FFMPEG, ['-y', '-i', webm, '-vf', `${gifVf},palettegen=stats_mode=diff`, pal], { stdio: 'ignore' });
+    const gifVf = 'fps=16,scale=760:-1:flags=lanczos';
+    spawnSync(FFMPEG, ['-y', '-t', '8', '-i', webm, '-vf', `${gifVf},palettegen=stats_mode=diff:max_colors=128`, pal], { stdio: 'ignore' });
     const gif = join(DIR, `${PREFIX}.gif`);
-    spawnSync(FFMPEG, ['-y', '-i', webm, '-i', pal, '-lavfi', `${gifVf}[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3`, gif], { stdio: 'ignore' });
+    spawnSync(FFMPEG, ['-y', '-t', '8', '-i', webm, '-i', pal, '-lavfi', `${gifVf}[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5`, gif], { stdio: 'ignore' });
     await rm(pal, { force: true });
     const sizes = await Promise.all([webm, mp4, gif].map(async (f) => {
       try { return `${f.split(/[\\/]/).pop()} ${(((await stat(f)).size) / 1e6).toFixed(2)} MB`; } catch { return `${f} (missing)`; }

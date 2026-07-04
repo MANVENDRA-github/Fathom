@@ -8,6 +8,7 @@ import { fetchSpanDetail } from './lib/detail';
 import { aggregateCost, summarize, type CostMetric } from './data/cost';
 import { Hud } from './ui/Hud';
 import { Legend } from './ui/Legend';
+import { LiveNotice } from './ui/LiveNotice';
 import { SpanDetail } from './ui/SpanDetail';
 import { FlameView, fmt } from './ui/FlameView';
 import { Controls, type SourceKey, type ViewKey, REPLAY_FILES } from './ui/Controls';
@@ -22,6 +23,10 @@ function initialSource(): SourceKey {
 }
 function initialView(): ViewKey {
   return new URLSearchParams(location.search).get('view') === 'flame' ? 'flame' : 'river';
+}
+function replayLoadError(source: 'real' | 'sample', e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  return `couldn't load the replay trace (${REPLAY_FILES[source]}) — ${msg}. Reload to retry; if you're running locally, npm run build first.`;
 }
 
 export default function App() {
@@ -38,6 +43,7 @@ export default function App() {
   const [stats, setStats] = useState<RiverStats | null>(null);
   const [meta, setMeta] = useState<TraceMeta | null>(null);
   const [connected, setConnected] = useState(false);
+  const [liveStalled, setLiveStalled] = useState(false);   // live picked but no gateway answering
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<PickResult | null>(null);
   const [detail, setDetail] = useState<SpanDetailData | null>(null);
@@ -64,6 +70,7 @@ export default function App() {
           setHoverKey(key);
           if (key) document.querySelector(`.ftrow[data-key="${CSS.escape(key)}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         },
+        onError: (msg) => { if (!cancelled) setError(msg); },
       });
       if (source === 'live') {
         // Aggregate the server's live ring buffer (poll so the flame tracks the stream).
@@ -86,11 +93,11 @@ export default function App() {
             const trace = (await res.json()) as NormalizedTrace;
             if (cancelled) return;
             setMeta(trace.meta); setEvents(trace.events); setFlameLoading(false);
-          } catch (e) { if (!cancelled) setError(String(e)); }
+          } catch (e) { if (!cancelled) setError(replayLoadError(source as 'real' | 'sample', e)); }
         })();
       }
     } else if (source === 'live') {
-      const handle = createRiver(canvas, { mode: 'live', perf: DEBUG }, setStats);
+      const handle = createRiver(canvas, { mode: 'live', perf: DEBUG, onError: (msg) => { if (!cancelled) setError(msg); } }, setStats);
       handle.setPaused(paused);
       handle.setBloom(bloom);
       handleRef.current = handle;
@@ -108,12 +115,12 @@ export default function App() {
           const trace = (await res.json()) as NormalizedTrace;
           if (cancelled) return;
           setMeta(trace.meta);
-          const handle = createRiver(canvas, { mode: 'replay', trace, perf: DEBUG }, setStats);
+          const handle = createRiver(canvas, { mode: 'replay', trace, perf: DEBUG, onError: (msg) => { if (!cancelled) setError(msg); } }, setStats);
           handle.setPaused(paused);
           handle.setBloom(bloom);
           handleRef.current = handle;
         } catch (e) {
-          if (!cancelled) setError(String(e));
+          if (!cancelled) setError(replayLoadError(source as 'real' | 'sample', e));
         }
       })();
     }
@@ -130,6 +137,16 @@ export default function App() {
     // re-create only on source/view change; pause is applied imperatively.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source, view]);
+
+  // Live mode with nothing answering is a silent dead-end (EventSource retries forever, the badge
+  // sits at "connecting…"). After 4s un-connected, surface an honest notice instead. No hard block:
+  // http://localhost is a potentially-trustworthy origin, so a locally-run server CAN feed the
+  // hosted demo — the notice self-dismisses the moment a connection lands.
+  useEffect(() => {
+    if (source !== 'live' || connected) { setLiveStalled(false); return; }
+    const t = setTimeout(() => setLiveStalled(true), 4000);
+    return () => clearTimeout(t);
+  }, [source, connected, view]);
 
   // Flame aggregation + a HUD summary over the same events (so the HUD reconciles with the flame).
   const costModel = useMemo(() => aggregateCost(events ?? [], metric), [events, metric]);
@@ -215,7 +232,10 @@ export default function App() {
               : 'every particle is one real span · replayed as a live stream'}
         </div>
       </div>
-      <Legend />
+      {source === 'live' && !connected && liveStalled && (
+        <LiveNotice server={SERVER} onReplay={() => setSource('real')} />
+      )}
+      <Legend view={view} />
       <Controls source={source} onSource={setSource} view={view} onView={changeView} paused={paused} onPause={togglePause} bloom={bloom} onBloom={toggleBloom} />
       {!flameView && source !== 'live' && (
         <div id="timeline"><div id="playhead" style={{ width: `${(stats?.playFrac ?? 0) * 100}%` }} /></div>

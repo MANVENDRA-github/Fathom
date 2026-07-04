@@ -182,3 +182,54 @@ body {
   background: linear-gradient(rgba(205, 214, 244, 0.5), transparent);
 }
 @media (prefers-reduced-motion: reduce) { .flame-label { transition: none; } }
+
+/* --- M5 launch polish ---------------------------------------------------------
+   Small guided moments for a first-time visitor: the river's pick hint, and an honest
+   notice when `live` is selected with no gateway answering (the hosted-demo case). */
+.legend .row.hint { margin-top: 4px; font-size: 10px; color: #565b74; letter-spacing: 0.04em; }
+
+.live-notice {
+  top: 22px; left: 50%; transform: translateX(-50%);
+  width: 384px; max-width: calc(100vw - 24px); padding: 14px 16px; z-index: 12;
+  border-top: 1px solid rgba(255, 176, 32, 0.55);   /* the fallback lane's amber — "waiting" */
+  animation: detail-in 180ms ease-out backwards;
+}
+.live-notice .ln-title {
+  font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #f9e2af; margin-bottom: 6px;
+}
+.live-notice p { margin: 0 0 8px; font-size: 11px; color: #bac2de; }
+.live-notice code {
+  color: #f9e2af; background: rgba(200, 160, 40, 0.1); border-radius: 4px; padding: 0 4px;
+  overflow-wrap: break-word;   /* long URLs/env vars wrap only when they must, not mid-word */
+}
+.live-notice .ln-aside { display: block; margin-top: 2px; color: #565b74; font-size: 10px; }
+.live-notice .ln-replay {
+  font: inherit; width: 100%; margin-top: 2px; padding: 6px 10px; cursor: pointer;
+  color: #10131f; background: #f9e2af; border: 1px solid #f9e2af; border-radius: 6px; font-weight: 600;
+}
+.live-notice .ln-replay:hover { background: #ffedc2; }
+@media (prefers-reduced-motion: reduce) { .live-notice { animation: none; } }
+
+/* --- M5 minimal mobile pass ----------------------------------------------------
+   No layout rearchitecture: tighter insets, the HUD keeps the honesty badge, the GPU
+   title panel yields, panels clamp to the viewport. Canvas stays the star. */
+@media (max-width: 720px) {
+  #hud { top: 12px; left: 12px; width: min(272px, calc(100vw - 24px)); padding: 10px 12px; }
+  #hud .metric .v { font-size: 15px; }
+  .title-r { display: none; }
+  .legend { bottom: 12px; left: 12px; padding: 8px 10px; font-size: 10px; }
+  .controls { bottom: 12px; right: 12px; padding: 8px; flex-wrap: wrap; justify-content: flex-end; max-width: calc(100vw - 24px); }
+  .detail, .detail.at-left, .detail.at-right {
+    top: 12px; left: 50%; transform: translateX(-50%);
+    width: calc(100vw - 24px); max-height: 62vh;
+  }
+  .live-notice { top: 12px; }
+  .flame { top: 12px; right: 12px; width: min(320px, calc(100vw - 24px)); max-height: 46vh; }
+  /* flame view on a phone: the flame panel IS the data panel — it owns the top, the HUD yields
+     (same numbers by construction; .flame precedes #hud as a sibling, so ~ selects it) */
+  .flame ~ #hud { display: none; }
+  #timeline { left: 12px; right: 12px; }
+}
+@media (max-width: 480px) {
+  .legend { display: none; }   /* phones: canvas first — the HUD still labels the data honestly */
+}

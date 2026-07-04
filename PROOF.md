@@ -284,7 +284,7 @@ curl flow, model sub-streams, `est. $ saved (cache) —` honest unpriced state).
 
 ---
 
-## 8. M5 — hosted demo build + capture (Opus half)
+## 8. M5 — hosted demo: build + capture (Opus half) · launch surface (Fable half)
 The public demo is the static `app/dist` on **GitHub Pages** (CI-built), running `?source=real` — the
 labeled client-side replay, no server. Deploy config: `.github/workflows/deploy.yml` (build → Pages on
 `main`) + `ci.yml` (PR build gate). URL: `https://manvendra-github.github.io/Fathom/`.
@@ -302,22 +302,34 @@ npm run build
 **(b) Demo clip captured on the real GPU** (`app/record.mjs` → serve dist → Chrome
 `--force_high_performance_gpu` → `[fathom]` ready → `?source=real` → `recordVideo` → ffmpeg):
 ```bash
-npm run app:record
+npm run app:record        # re-run after the M5 Fable polish (hint line, notice, meta) — 2026-07-04
 #   [record] serving app/dist at http://localhost:8976  source=real
-#   [page] [fathom] replay mode · 24,982 particles · nvidia · lovelace
+#   [page] [fathom] replay mode · 25,146 particles · nvidia · lovelace
 #   [record] hero still -> fathom-demo.png
 #   [record] video -> fathom-demo.webm
 #   [record] ffmpeg -> fathom-demo.mp4, fathom-demo.gif
-#   artifacts: fathom-demo.gif 6.69 MB (760×428, 128 frames, ~30fps) · fathom-demo.mp4 5.32 MB ·
-#              fathom-demo.webm 3.52 MB · fathom-demo.png 0.42 MB
+#   outputs: fathom-demo.webm 3.43 MB · fathom-demo.mp4 5.15 MB · fathom-demo.gif 6.17 MB
+#            (gif: 760×428, 16fps × 8s = 128 frames, 128 colors — the recipe now shipped in app/record.mjs)
 ```
 `fathom-demo.gif` is the README hero (git-tracked); `webm`/`mp4` are gitignored (regenerable; the mp4 is
 uploaded directly at launch). The clip is a **real capture, replayed** — the HUD reads "requests replayed"
 and the panel says "replayed as a live stream" (honest, no manipulation beyond replay-order interleaving).
 
 **M5 Opus exit criterion met:** the static replay demo builds and deploys via CI to a public URL, and the
-README autoplay GIF is captured from the shipping bundle on the 4070. GIF is ~30fps for size; the demo
-*runs* at 60fps (§7). Remaining (Fable half): README hero copy + public-demo polish + launch.
+README autoplay GIF is captured from the shipping bundle on the 4070. GIF is ~16fps for size; the demo
+*runs* at 60fps (§7).
+
+**(c) Fable half — launch surface + first-visit polish** (same-day pass, screenshot-iterated on the 4070):
+README rebuilt to the SPEC §7 launch shape (hook → hero gif → demo link + the 0.106 ms/157× number →
+"why this exists" → substance); unfurl cards (`og:`/`twitter:` + `og.png` 1200×630 + SVG favicon);
+adapter-null and init failures now surface on-screen (`onError` threaded through `createRiver`/`createFlame`
+— previously a silent blank canvas); live mode with no gateway shows an honest **"no gateway connected"**
+notice after 4s (self-dismisses on connect; one-click switch to the real capture); river legend gains
+`click a comet → its span`; replay-fetch errors are worded for humans; minimal mobile pass (≤720px compact
+panels, ≤480px canvas-first; flame panel owns the top on phones). Verified: build green · pick-check 21/21 ·
+cost-check 50/50 · pick-e2e 8/8 (`m2-drill.png` regenerated with the polished UI) · 4-state screenshot
+iteration (desktop river / live notice / mobile river / mobile flame — 2 defects caught + fixed: mid-word
+code wrapping, flame-over-HUD overlap). Remaining: launch (X/HN).
 
 ---
 
