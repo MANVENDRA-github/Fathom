@@ -228,6 +228,62 @@ sample carries real cost). `app` build green.
 
 ---
 
+## 7. M4 — richness pass (curl-noise compute + bloom + sub-streams + $ saved, measured)
+
+The river's motion moved into a **stateless compute pass** (`shaders/river-sim.wgsl`) that adds an analytic
+divergence-free **curl-noise flow field** — still a pure function of (stored floats, time), so the M2 CPU
+pick mirror stays exact. **Bloom** is a real post chain (rgba16float scene → threshold/downsample →
+tent upsample → hue-preserving composite; UI toggle, default on). **Sub-streams**: each provider/model
+hashes to a deterministic shade + y sub-band within its outcome lane. New HUD counter **est. $ saved
+(cache)** — estimated from the data's own priced cache misses, honestly `—` on the unpriced real capture.
+
+**(a) Pick math still mirrors the shader — now curl-aware** (deterministic, no GPU):
+```bash
+node server/node_modules/tsx/dist/cli.mjs app/tools/pick-check.ts
+#   PASS headPos = base + curl(base) (composition, this loop · 3 loops later)
+#   PASS curl |dx| bounded (0.0178 < 0.0190) · |dy| bounded (0.0149 < 0.0150) — lanes stay legible
+#   PASS curl field is divergence-free (max |div| 2.3e-9 < 1e-3)
+#   PASS modelHash deterministic · sub-band + scatter strictly inside every lane · tints valid
+#   OK — pick math mirrors the shader (motion.ts) + build.ts heads   (21/21)
+```
+
+**(b) $ saved estimator is honest** (both datasets):
+```bash
+node server/node_modules/tsx/dist/cli.mjs app/tools/cost-check.ts
+#   PASS [real] $ saved is null (costUsd-null capture → HUD "—")
+#   PASS [sample] estimate ≈ generator's dollarsSaved (0.0468 vs 0.0437, within 2×)
+#   PASS summarize.savedUsd === estimateSaved  (real + sample — HUD === flame by construction)
+#   OK — cost aggregation reconciles (real + sample, all metrics)   (50/50)
+```
+
+**(c) Full pick loop on the real GPU, with curl + bloom active** (regression of §5c):
+```bash
+npm run build
+node server/tools/pick-e2e.mjs
+#   [e2e] streamed 81 OTLP spans; 54 comet heads visible after freeze
+#   PASS click resolved the clicked comet · DOM id === server id (full loop consistent)
+#   OK — click → correct span → /traces/:id on the real GPU   (8/8)
+```
+
+**(d) Measured perf — the exit criterion** (`timestamp-query` on the real pipeline, real capture ~25k particles):
+```bash
+node app/perf.mjs        # 1600×900, ?source=real&debug=1 · --force_high_performance_gpu
+#   GPU: nvidia · lovelace   timestamp-query: yes   (359–361 GPU samples · 600 frame samples per config)
+#   config     | compute | scene   | bloom   | totalGPU | GPU p95 | frame avg | frame p95
+#   bloom on   |  0.004  |  0.044  |  0.058  |  0.106   |  0.113  |  4.195    |  4.700
+#   bloom off  |  0.003  |  0.029  |  0.000  |  0.032   |  0.035  |  4.174    |  4.600
+#   budget: 16.7 ms/frame (60fps) — PASS with bloom on (156.8× headroom)
+```
+(GPU columns are medians in ms; `frame avg` is vsync-capped at the 240 Hz display — GPU ms is the signal.
+Spike regression after the refactor: `npm run bench` → 1M @ 0.61 ms GPU, still **GO**.)
+
+**M4 exit criterion met:** bloom + curl-noise + sub-streams land with the whole richness pipeline at
+**0.106 ms median GPU/frame** (157× under the 16.7 ms budget) on the 4070, measured per-pass with
+`timestamp-query` on the shipping renderer. Artifact: `app/m4-richness.png` (real capture, bloom on —
+curl flow, model sub-streams, `est. $ saved (cache) —` honest unpriced state).
+
+---
+
 ## Claim → evidence
 | Claim | Evidence |
 |---|---|
@@ -237,6 +293,8 @@ sample carries real cost). `app` build green.
 | Cache / fallback / PII all real | 140 / 95 / 85 from the capture; rendered as cyan / amber / red |
 | sentinel left pristine | temp dumper deleted; `git -C <sentinel> status` clean |
 | Ingestion is source-agnostic | renderer consumes only the normalized schema (`ARCHITECTURE.md`) |
+| Richness pass holds 60fps | `node app/perf.mjs` → 0.106 ms median GPU with bloom on (157× headroom, §7) |
+| Picks survive curl-noise motion | pick-check 21/21 (curl bounds + divergence) + pick-e2e 8/8 on the real GPU |
 
 ## Honest caveats
 - Benchmark FPS is vsync-capped (240 Hz) — the **GPU ms** column is the real headroom signal, not FPS.
@@ -244,3 +302,7 @@ sample carries real cost). `app` build green.
 - Capture particles are per-request comets with fixed density-by-outcome (mock upstream returns uniform
   12-token usage, so density is not token-mapped for this dataset).
 - Model names are sentinel's load-config ids (`std`/`pii`), not real provider models.
+- `est. $ saved (cache)` is an **estimate** (mean priced cost of the same model's non-cache spans, summed over
+  cache hits) — it needs priced data; the real capture is `costUsd`-null so the HUD shows `—`, never a fake $0.
+- Because the curl field samples global time, replay loops are not pixel-identical across cycles (positions
+  drift within the field's ±0.02 NDC bounds); the data and lane structure repeat exactly.

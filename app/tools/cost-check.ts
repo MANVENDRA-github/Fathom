@@ -8,7 +8,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { aggregateCost, summarize, type FlameNode, type CostMetric } from '../src/data/cost';
+import { aggregateCost, summarize, estimateSaved, type FlameNode, type CostMetric } from '../src/data/cost';
 import type { NormalizedTrace, TraceEvent } from '../../shared/schema';
 
 const DIR = dirname(fileURLToPath(import.meta.url));
@@ -75,6 +75,20 @@ for (const [label, es] of [['real', real], ['sample', sample]] as const) {
   check(`[${label}] summarize.cost === aggregate.totals.cost`, near(s.cost, a.totals.cost));
   check(`[${label}] summarize.requests === aggregate.totals.requests`, s.requests === a.totals.requests);
   check(`[${label}] summarize.tokens === aggregate.totals.tokens`, s.tokens === a.totals.tokens);
+}
+
+// 5. "$ saved" estimator (M4): honest null on unpriced data; a sane positive estimate on the
+//    sample, in the ballpark of the generator's own meta.dollarsSaved; summarize() reconciles.
+{
+  const meta = (JSON.parse(readFileSync(join(DIR, '../../traces.sample.json'), 'utf8')) as NormalizedTrace).meta as { dollarsSaved?: number };
+  check('[real] $ saved is null (costUsd-null capture → HUD "—")', estimateSaved(real) === null);
+  const s = estimateSaved(sample);
+  check('[sample] $ saved is a positive estimate', s !== null && s > 0);
+  const anchor = meta.dollarsSaved ?? 0;
+  check(`[sample] estimate ≈ generator's dollarsSaved (${s?.toFixed(4)} vs ${anchor}, within 2×)`,
+    s !== null && s > anchor / 2 && s < anchor * 2);
+  check('[real] summarize.savedUsd === estimateSaved', summarize(real).savedUsd === estimateSaved(real));
+  check('[sample] summarize.savedUsd === estimateSaved', summarize(sample).savedUsd === estimateSaved(sample));
 }
 
 console.log(`\n${failures === 0 ? 'OK' : failures + ' FAILURES'} — cost aggregation reconciles (real + sample, all metrics)`);

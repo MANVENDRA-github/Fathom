@@ -71,7 +71,8 @@ outcomes visible at once. Perf and the look are not v1 risks — *ingestion, int
   gate), `gpu/particles.ts` (buffers, pipelines), `gpu/shaders/*.wgsl`, `render/loop.ts`. A **spawn queue**
   turns incoming spans into comets in a **recycling pool** (fixed capacity; oldest recycled) so live traffic of
   any rate stays bounded and 60fps. Keep the proven additive-sprite + closed-form motion; the **richness pass**
-  reintroduces a compute pass for curl-noise flow.
+  reintroduces a compute pass for curl-noise flow. *(M4 note: the compute pass landed **stateless** — same pure
+  function, evaluated per-particle in compute — so the M2 pick mirror stays exact; see `ARCHITECTURE.md`.)*
 - **React shell** — DOM only (canvas stays raw WGSL): HUD (live counters), legend, controls
   (live/replay toggle, pause, lane filters), and the **drill-down panel**. React never touches the render loop.
 - **Capability gate** — `navigator.gpu` probe (adapted from Portfolio's `capabilities.ts`) with a graceful
@@ -119,7 +120,7 @@ Restructuring is **M0 work**, not done in this spec turn.
 | **M1 ✅ done** | Live OTLP end-to-end | ✅ real sentinel gateway → OTLP → Fathom (144 real spans, cache/fallback/pii mapped); live SSE → browser comets (see `PROOF.md` §4) | — |
 | **M2 ✅ done** | Drill-down | ✅ clicking a comet opens the correct span's real attributes, reconciled against `GET /traces/:id` on the real GPU (see `PROOF.md` §5); pick is CPU math mirroring the shader (`app/src/gpu/motion.ts`) | **Opus** (pick math, `/traces/:id`, wiring) ✅; **Fable** (attribute-panel UI — outcome-lit callout card: reticle + leader line, card parked opposite the comet) ✅ |
 | **M3 ✅ done** | 3D cost flame graph | ✅ toggle + cost-by-model/provider from the live buffer, reconciles with the HUD on screen; rendered as a **3D WGSL scene** (orbiting monoliths + embers, 4.5 ms/frame — `PROOF.md` §6) | **Opus** (cost aggregation + toggle + reconciliation) ✅; **Fable** (3D WGSL flame: monoliths, embers, orbit camera, ray pick, tracked DOM labels) ✅ |
-| **M4** | Richness pass | Bloom + curl-noise + sub-streams land with frame time still under the 60fps budget (measured, like `PROOF.md`) | **Fable** (aesthetic-craft milestone); **Opus** to keep the perf-budget measurement honest |
+| **M4 ✅ done** | Richness pass | ✅ bloom (HDR post chain + toggle) + curl-noise (stateless compute pass, pick mirror intact) + model sub-streams + `est. $ saved` counter — measured at **0.106 ms GPU/frame** with bloom on (157× headroom, `timestamp-query`; see `PROOF.md` §7) | **Fable** (curl field, bloom look, sub-streams) ✅; **Opus** (perf measurement, $-saved honesty, pick-mirror integrity) ✅ |
 | **M5** | Hosted demo + launch | Public URL runs labeled replay at 60fps; README autoplay GIF + honest headline number; ready for HN/X | **Fable** for the README hero + public-demo polish; **Opus** for deploy/CI config + GIF capture |
 
 **Model policy** (Opus + Fable only): **Fable** for anything people *look at* (shaders, viz, UI polish, launch surface); **Opus** for anything that must be *provably correct* (pick math, cost reconciliation, OTLP mapping) and all plumbing/tests/doc-sync. Highest-value Fable milestone: **M4**. Don't drop below Opus on **M3's aggregation** — a wrong cost number undercuts the "money deserves to be seen" pitch.

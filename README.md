@@ -6,14 +6,17 @@ Every particle is one real LLM-gateway span. Requests flow as glowing comets int
 real outcome: **cache hits** stream off as a cyan tributary, **429s** retry and fail over in amber,
 **PII** is caught and blocked in-path as red flares, and plain **spans/misses** run as the blue river.
 
-![Fathom cinema — real sentinel spans as a live-style river](./fathom-river.png)
+![Fathom cinema — real sentinel spans: curl-noise flow + bloom (M4)](./app/m4-richness.png)
 
 > Perf and the real-data look are proven (see [`PROOF.md`](./PROOF.md)); the v1 build is underway per
 > [`SPEC.md`](./SPEC.md). **Done: M0** (the app) **+ M1** (a generic OTLP live server — real sentinel spans
 > stream in as comets) **+ M2** (drill-down — click a comet → its real span attributes via `GET /traces/:id`)
 > **+ M3** (a `river`↔`$ flame` toggle → a rotating **3D cost flame graph**: provider monoliths + model bars
-> extruded from the live aggregation, rising embers, orbit camera, hover pick — numbers reconcile with the HUD).
-> **Next:** bloom/richness, hosted demo.
+> extruded from the live aggregation, rising embers, orbit camera, hover pick — numbers reconcile with the HUD)
+> **+ M4** (richness pass — curl-noise flow in a stateless compute pass, a real HDR **bloom** chain with a
+> toggle, model-shaded **sub-streams** within each lane, an honest `est. $ saved (cache)` HUD counter — the
+> whole pipeline measured at **0.106 ms GPU/frame** on the 4070, 157× under the 60fps budget).
+> **Next:** hosted demo (M5).
 
 ---
 
@@ -21,14 +24,17 @@ real outcome: **cache hits** stream off as a cyan tributary, **429s** retry and 
 
 ### 1. Cinema — the app (`app/`)
 A **Vite + React + TypeScript** app: a thin React shell (HUD / legend / controls) over a **raw-WebGPU core**
-(`app/src/gpu/`) that renders spans as glowing comets in 4 outcome lanes. Two modes: **live** (SSE, one comet
-per span as it arrives) and **replay** (loops a captured trace). The primary artifact + seed of Fathom v1.
+(`app/src/gpu/`) that renders spans as glowing comets in 4 outcome lanes — motion (closed-form base +
+curl-noise flow) in a stateless compute pass, model-shaded sub-streams within each lane, and an HDR bloom
+post chain (toggleable). Two modes: **live** (SSE, one comet per span as it arrives) and **replay** (loops a
+captured trace). The primary artifact + seed of Fathom v1.
 
 ```bash
 npm run app:install  # once — installs app/ deps (vite, react, typescript)
 npm run dev          # http://localhost:5173  (?source=live|real|sample)
 npm run build        # tsc -b + vite build -> app/dist
 node app/shot.mjs    # build first; screenshots the running app on the real GPU
+node app/perf.mjs    # build first; per-pass GPU times (compute/scene/bloom) via timestamp-query
 ```
 
 ### 2. Live server — `server/` (M1/M2)

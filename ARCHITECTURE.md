@@ -41,16 +41,32 @@ particles; the cinema optimizes for a legible, striking replay of a few hundred 
 > and a thin React shell in `app/src/ui/`. The rendering/motion design below is unchanged; `fathom.js` remains
 > as the legacy standalone. The normalized schema now lives in `shared/schema.ts`.
 
-- **No compute pass.** Motion is **closed-form in the vertex shader**: given global `time` and a particle's
-  static params, position/alpha are a pure function → stateless, and the loop wraps seamlessly
-  (`tau = (time - spawnT) mod cycle`). Simpler and ample-fast at these counts (~25k particles).
+- **Stateless compute pass (M4).** Motion runs in a compute pass (`shaders/river-sim.wgsl`, one thread per
+  particle) that writes `(x, y, size, alpha)` to a storage buffer; the vertex stage just fetches. Crucially it
+  is still **stateless**: given global `time` and a particle's static params, position/alpha are a pure
+  function (no integration), the loop wraps seamlessly (`tau = (time - spawnT) mod cycle`), and the M2 pick
+  mirror stays exact. On top of the closed-form base motion the sim adds an analytic **divergence-free
+  curl-noise flow field** (3-octave stream function, sampled at the base position with global time so
+  neighboring comets swirl together; |dy| ≤ 0.015 — inside the lane-legibility budget).
 - **One comet per request.** Each event emits K trail particles (K by outcome: PII flare 90, fallback 74,
   span 52, cache 26). Head is brightest; the trail staggers spawn time and shrinks.
 - **Lanes by real outcome** (clip-space y bands): cache-hit **cyan** top tributary; 429→fallback **amber**
   mid; span/miss **blue** bottom; PII **red** flare in the bottom band with an upward pop.
+- **Model sub-streams within a lane (M4, `data/substream.ts`).** Each `provider/model` FNV-1a-hashes to a
+  deterministic shade of the outcome color + a y sub-band inside the lane — the lane hue stays the outcome
+  signal; the shade is the model. Hash-based (not arrival-ordered) so a model keeps its identity across
+  live/replay and across sessions; the sub-band + scatter stays strictly inside the lane (pick-check enforced).
 - **Soft additive sprites.** Each particle is a 6-vertex quad; the fragment applies a radial falloff and
   outputs **premultiplied** color; blend is `one/one` (additive) over a near-black clear → the glow.
-- **Cull:** inactive particles (`tau > life`) emit a degenerate clipped vertex (`z = -2`).
+- **Cull:** the sim writes `alpha = 0` for inactive particles (`tau > life`); the vertex stage emits a
+  degenerate clipped vertex (`z = -2`) for them.
+- **Bloom post pass (M4, `gpu/bloom.ts` + `shaders/bloom.wgsl`).** With bloom on, the river renders into an
+  **rgba16float** scene target (dense additive clusters exceed 1.0 — exactly what should glow), then:
+  soft-knee threshold (T 0.55 / knee 0.25) + 4-tap box downsample → half-res mip chain (min-dim ≥ 8, ≤6
+  levels) → 9-tap tent **additive** upsample → composite to the swapchain (`scene + 0.45·bloom`) with a
+  hue-preserving soft clip so over-bright cores stay incandescent-in-lane-color instead of bleaching white.
+  Bloom off = the exact pre-M4 path (straight to swapchain). UI toggle (default on); chain rebuilt at frame
+  start on a resize-dirty flag, old textures destroyed.
 
 ---
 
@@ -129,10 +145,12 @@ Endpoints: `POST /v1/traces`, `GET /stream`, `GET /traces/:id` (M2), `GET /debug
 ## Drill-down (M2 — pick math + `/traces/:id`)
 Clicking a comet resolves it to its source span, entirely from the shape the renderer already computes.
 
-- **Pick math (`gpu/motion.ts`).** Because comet motion is *closed-form* (a particle's clip-space center is a
-  pure function of its stored floats + `time`, no camera/projection), a screen click inverts back to a comet
-  on the CPU. `motion.ts` mirrors `river.wgsl:31-53` exactly — the `tau = (time-spawnT) mod cycle` wrap, the
-  `tau > life` cull, the eased-lane + turbulence `y` — and hit-tests in **pixel space**: the sprite is drawn
+- **Pick math (`gpu/motion.ts`).** Because comet motion is *stateless* (a particle's clip-space center is a
+  pure function of its stored floats + `time`, no camera/projection — since M4 evaluated in the
+  `river-sim.wgsl` compute pass), a screen click inverts back to a comet on the CPU. `motion.ts` mirrors
+  `river-sim.wgsl` exactly — the `tau = (time-spawnT) mod cycle` wrap, the `tau > life` cull, the eased-lane +
+  turbulence `y`, **and the curl-noise displacement** (identical constants, marked by MIRROR blocks in both
+  files) — and hit-tests in **pixel space**: the sprite is drawn
   round in pixels (`off = (size, size*aspect)`), so its hit radius is `size*width/2` px and aspect cancels.
   `pick()` nearest-wins over the visible **heads** (one per comet); it uses the last *rendered* `time`, so a
   click on a paused (frozen) river lands on the still comet.
@@ -177,13 +195,38 @@ A `river`↔`$ flame` toggle (`ui/Controls.tsx`) switches the whole view. The fl
   legend (`ui/FlameView.tsx`) stays the numeric truth (hover lights its row; click scrolls to it). Same
   Opus-data → Fable-visual handoff as M2.
 
+## Richness pass (M4 — curl flow, bloom, sub-streams, $ saved; measured)
+The Fable aesthetic milestone, with the perf numbers kept honest (`PROOF.md` §7).
+
+- **Curl-noise via a *stateless* compute pass.** SPEC called for a compute pass; M2's pick system demands
+  motion stay a pure function the CPU can mirror. The resolution: the compute pass (`river-sim.wgsl`) evaluates
+  the same closed-form base motion + an analytic curl field (no integration) and writes positions to a storage
+  buffer the vertex stage fetches. Deterministic → `motion.ts` mirrors it and picks stay exact
+  (pick-check 21/21, pick-e2e 8/8). The curl field is the curl of a 3-octave stream function — divergence-free
+  by construction, amplitude-bounded (|dy| ≤ 0.015) so the tightest lane gap (0.09 NDC) survives worst-case
+  jitter+turb+curl (0.080). It samples **global time** for cross-comet coherence, so replay loops drift
+  subtly within the bounds (data + lanes repeat exactly; documented in PROOF's caveats).
+- **Bloom + HDR** — see the Component-2 bullets: rgba16float scene, threshold→mip chain→tent-up→composite,
+  hue-preserving soft clip, UI toggle (off = pre-M4 path).
+- **`est. $ saved (cache)` (`data/cost.ts`).** Σ over cache hits of the mean priced cost of the *same
+  provider/model's non-cache* spans in the same event set — no external price table, so it's derived from the
+  data or it's `null` (HUD `—`, "no priced spans in this data"). One accumulator (`accSaved`/`savedOf`) is
+  shared by the river statsFns and `summarize()`, so river HUD, flame HUD, and `estimateSaved()` agree by
+  construction (cost-check 50/50; sample estimate $0.0468 vs the generator's own $0.0437).
+- **Perf instrumentation.** Under `?debug=1` the river requests `timestamp-query` (when the adapter has it)
+  and query-pairs compute / scene / bloom every 4th frame; `window.__fathom.perf()` returns medians/p95 +
+  rAF pacing. `app/perf.mjs` drives it on the real GPU (bloom on/off) and prints the PROOF §7 table.
+
 ## Decisions & gotchas
-- **Closed-form vs compute for the cinema.** Chosen for simplicity + seamless looping; compute was already
-  proven in the spike, so the cinema didn't need it. Curl-noise flow would need compute (a v1 option).
+- **Closed-form vs compute for the cinema.** M0–M3 stayed closed-form in the vertex shader for simplicity +
+  seamless looping. M4 moved motion into a compute pass for the curl-noise flow — but kept it **stateless**
+  (see above) so the pick mirror survived. True stateful advection remains a non-goal while picks are CPU math.
 - **Interleave.** The load harness order is sequential-by-scenario, not real timing — so the cinema shuffles
   replay position to show a mixed stream. Honest because spans/proportions are unchanged and it's labeled a replay.
 - **GPU selection.** On Windows `powerPreference` is ignored (crbug/369219127); Chrome flag
   `--force_high_performance_gpu` selects the discrete GPU. Both harnesses pass it; the HUD shows `adapter.info`.
 - **WGSL `loop` is reserved** — using it as a struct field silently invalidated the pipeline (black screen).
   Renamed to `cycle`. Storage structs use 16-byte-aligned `vec4` packing.
-- **Premultiplied additive** (`one/one`) over a dark clear gives the bloom-like glow without a post pass.
+- **Premultiplied additive** (`one/one`) over a dark clear gives the base glow; since M4 a real bloom post
+  pass (HDR scene → mip chain → composite) sits on top of it — and the additive-only look remains exactly
+  what the bloom-off toggle renders.
