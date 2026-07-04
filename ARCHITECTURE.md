@@ -217,6 +217,27 @@ The Fable aesthetic milestone, with the perf numbers kept honest (`PROOF.md` §7
   and query-pairs compute / scene / bloom every 4th frame; `window.__fathom.perf()` returns medians/p95 +
   rAF pacing. `app/perf.mjs` drives it on the real GPU (bloom on/off) and prints the PROOF §7 table.
 
+## Deploy (M5 — hosted demo)
+The public demo is the built `app/dist` served **statically** — no server. `?source=real` (the default)
+fetches the bundled `traces.json` and runs the **labeled client-side replay**, so a static host is enough;
+only `?source=live` needs the Node OTLP+SSE server (deferred).
+
+- **GitHub Pages via CI.** `.github/workflows/deploy.yml` builds on every push to `main` (`npm --prefix app ci`
+  → `npm run build`), uploads `app/dist` as a Pages artifact, and deploys it. `ci.yml` runs the same build on
+  PRs as a gate. One-time repo setup: **Settings → Pages → Source = "GitHub Actions"**. URL:
+  `https://manvendra-github.github.io/Fathom/`.
+- **Relative base.** Pages serves under a subpath (`/Fathom/`), so `vite.config.ts` sets `base:'./'`. All asset
+  URLs and the `import.meta.env.BASE_URL`-relative `traces.json` fetch resolve under any mount point — the same
+  bundle also works when the recorder serves `dist` at root. Fathom routes only via query params, so relative
+  base has no routing downside.
+- **Demo clip.** `app/record.mjs` records the running `app/dist` on the real GPU (serve dist → `channel:'chrome'`
+  + `--force_high_performance_gpu` → wait `[fathom]` ready → `?source=real` → `recordVideo`), then ffmpeg emits
+  `.mp4` + a two-pass-palette `.gif`. The GIF (`app/fathom-demo.gif`, ~30fps for size) is the README hero and is
+  git-tracked; `webm`/`mp4` are gitignored (regenerable; the mp4 is uploaded directly at launch). Honesty: the
+  clip is a real capture, replayed — the HUD's "requests replayed" / "replayed as a live stream" says so.
+- **Deferred (live mode).** Hosting the Node server for public `?source=live` needs a live process (Fly.io/Render;
+  Cloudflare Pages is static-only, a Worker+Durable Object is the advanced alt). Not required for the launch demo.
+
 ## Decisions & gotchas
 - **Closed-form vs compute for the cinema.** M0–M3 stayed closed-form in the vertex shader for simplicity +
   seamless looping. M4 moved motion into a compute pass for the curl-noise flow — but kept it **stateless**

@@ -15,7 +15,8 @@
     "sample": "node synth-traces.mjs",
     "ingest": "node ingest.mjs data/sentinel-traces-raw.json traces.json",
     "record": "node record.mjs traces.json fathom-river 18",
-    "record:sample": "node record.mjs traces.sample.json cinema-sample 8"
+    "record:sample": "node record.mjs traces.sample.json cinema-sample 8",
+    "app:record": "node app/record.mjs"
   },
   "devDependencies": {
     "playwright-core": "^1.49.0"

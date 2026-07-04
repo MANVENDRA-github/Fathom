@@ -6,7 +6,11 @@ Every particle is one real LLM-gateway span. Requests flow as glowing comets int
 real outcome: **cache hits** stream off as a cyan tributary, **429s** retry and fail over in amber,
 **PII** is caught and blocked in-path as red flares, and plain **spans/misses** run as the blue river.
 
-![Fathom cinema — real sentinel spans: curl-noise flow + bloom (M4)](./app/m4-richness.png)
+[![Fathom cinema — real sentinel spans: curl-noise flow + bloom, replayed at 60fps](./app/fathom-demo.gif)](https://manvendra-github.github.io/Fathom/)
+
+> **▶ Live demo — https://manvendra-github.github.io/Fathom/** · real sentinel spans, replayed
+> client-side at 60fps on the GPU (needs a [WebGPU](https://caniuse.com/webgpu) browser). The clip
+> above is a real capture, replayed — the HUD says so.
 
 > Perf and the real-data look are proven (see [`PROOF.md`](./PROOF.md)); the v1 build is underway per
 > [`SPEC.md`](./SPEC.md). **Done: M0** (the app) **+ M1** (a generic OTLP live server — real sentinel spans
@@ -16,7 +20,8 @@ real outcome: **cache hits** stream off as a cyan tributary, **429s** retry and 
 > **+ M4** (richness pass — curl-noise flow in a stateless compute pass, a real HDR **bloom** chain with a
 > toggle, model-shaded **sub-streams** within each lane, an honest `est. $ saved (cache)` HUD counter — the
 > whole pipeline measured at **0.106 ms GPU/frame** on the 4070, 157× under the 60fps budget).
-> **Next:** hosted demo (M5).
+> **M5 (underway):** the static replay demo is deployed to **GitHub Pages** via CI (link above);
+> README hero GIF + launch polish next.
 
 ---
 
@@ -35,7 +40,12 @@ npm run dev          # http://localhost:5173  (?source=live|real|sample)
 npm run build        # tsc -b + vite build -> app/dist
 node app/shot.mjs    # build first; screenshots the running app on the real GPU
 node app/perf.mjs    # build first; per-pass GPU times (compute/scene/bloom) via timestamp-query
+npm run app:record   # build first; records the demo clip (webm+mp4+gif) on the real GPU -> app/fathom-demo.*
 ```
+
+The deployed demo (`.github/workflows/deploy.yml` → GitHub Pages) is the built `app/dist` served
+statically; `?source=real` runs the labeled replay fully client-side (no server). ffmpeg is needed
+for the `.gif`/`.mp4` from `app:record` (webm-only without it; set `FFMPEG=<path>` if not on PATH).
 
 ### 2. Live server — `server/` (M1/M2)
 Node + TypeScript: a **generic OTLP/HTTP receiver** (`POST /v1/traces`) → normalized mapper → ring buffer →
@@ -91,7 +101,8 @@ develop the renderer.
 | `spike/` | perf spike + benchmark (`index.html`, `main.js`, `bench.mjs`) |
 | `ingest.mjs` | sentinel `TraceRecord[]` → normalized schema (the ingestion contract) |
 | `synth-traces.mjs` | synthetic sample generator (dev only) |
-| `record.mjs` | Playwright capture → `.png` + `.webm` (+ `.mp4`/`.gif` with ffmpeg) |
+| `record.mjs` · `app/record.mjs` | Playwright capture → `.png`+`.webm`(+`.mp4`/`.gif`): `record.mjs` = legacy `fathom.html`; `app/record.mjs` = the **new** `app/` demo clip (M5 hero) |
+| `.github/workflows/` | `deploy.yml` (build `app/dist` → **GitHub Pages** on `main`) · `ci.yml` (PR build gate) |
 | `tools/sentinel-dump.ts` | reference capture script (copy into `<sentinel>/load/`, run, delete) |
 | `fathom.html` · `fathom.js` | legacy standalone cinema (superseded by `app/`) |
 | `traces.json` · `data/` | current normalized trace · captured raw records |

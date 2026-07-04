@@ -1,0 +1,21 @@
+# PR gate: the deployable bundle must type-check and build. Keeps main deployable.
+name: ci
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install app deps
+        run: npm --prefix app ci
+      - name: Build (tsc -b && vite build)
+        run: npm run build
