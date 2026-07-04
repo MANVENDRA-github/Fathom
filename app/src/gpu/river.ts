@@ -4,6 +4,7 @@ import { makeComet, outcomeOf, COMET_MAX } from '../data/comet';
 import { accSaved, newSavedAcc, savedOf } from '../data/cost';
 import type { Outcome } from '../data/classify';
 import { pickHead, headPos, ndcToPixel, type HeadLike } from './motion';
+import { NO_ADAPTER_MSG } from './capabilities';
 import riverWGSL from './shaders/river.wgsl?raw';
 import riverSimWGSL from './shaders/river-sim.wgsl?raw';
 import { createBloom } from './bloom';
@@ -21,8 +22,8 @@ export interface RiverStats {
 }
 
 export type RiverOpts =
-  | { mode: 'replay'; trace: NormalizedTrace; perf?: boolean }
-  | { mode: 'live'; capacity?: number; perf?: boolean };
+  | { mode: 'replay'; trace: NormalizedTrace; perf?: boolean; onError?: (message: string) => void }
+  | { mode: 'live'; capacity?: number; perf?: boolean; onError?: (message: string) => void };
 
 /** M4 perf snapshot — GPU pass times via timestamp-query when available, else frame pacing only. */
 export interface RiverPerf {
@@ -178,7 +179,8 @@ export function createRiver(
 
   (async () => {
     const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
-    if (!adapter || destroyed) return;
+    if (destroyed) return;
+    if (!adapter) { opts.onError?.(NO_ADAPTER_MSG); return; }   // else: silent blank canvas
     tsq = wantPerf && adapter.features.has('timestamp-query');
     device = await adapter.requestDevice(tsq ? { requiredFeatures: ['timestamp-query' as GPUFeatureName] } : undefined);
     if (destroyed) { device.destroy(); return; }
@@ -394,7 +396,10 @@ export function createRiver(
     raf = requestAnimationFrame(frame);
     // eslint-disable-next-line no-console
     console.log('[fathom]', opts.mode, 'mode ·', opts.mode === 'replay' ? `${drawCount.toLocaleString()} particles` : `pool ${capacity.toLocaleString()} (max ${COMET_MAX}/comet)`, '·', gpuLabel);
-  })().catch((e) => console.error('[fathom] init failed:', e));
+  })().catch((e) => {
+    console.error('[fathom] init failed:', e);
+    if (!destroyed) opts.onError?.(`WebGPU init failed — ${e instanceof Error ? e.message : String(e)}`);
+  });
 
   return {
     destroy() {

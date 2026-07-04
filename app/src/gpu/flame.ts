@@ -1,6 +1,7 @@
 import type { CostModel } from '../data/cost';
 import { perspective, lookAt, multiply, transformPoint, normalize, cross, type Vec3 } from './mat4';
 import { ndcToPixel } from './motion';
+import { NO_ADAPTER_MSG } from './capabilities';
 import flameWGSL from './shaders/flame.wgsl?raw';
 
 /**
@@ -57,6 +58,7 @@ export function createFlame(
     onPick?: (key: string | null) => void;
     onHover?: (key: string | null) => void;   // fired only when the hovered bar changes
     onReady?: (gpuLabel: string) => void;
+    onError?: (message: string) => void;      // adapter denied / init threw — surface, don't blank
   },
 ): FlameHandle {
   let destroyed = false;
@@ -264,7 +266,8 @@ export function createFlame(
   // ---- GPU init -------------------------------------------------------------------
   (async () => {
     const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
-    if (!adapter || destroyed) return;
+    if (destroyed) return;
+    if (!adapter) { callbacks.onError?.(NO_ADAPTER_MSG); return; }   // else: silent blank canvas
     device = await adapter.requestDevice();
     if (destroyed) { device.destroy(); return; }
 
@@ -420,7 +423,10 @@ export function createFlame(
     raf = requestAnimationFrame(frame);
     // eslint-disable-next-line no-console
     console.log('[fathom] flame mode ·', gpuLabel);
-  })().catch((e) => console.error('[fathom] flame init failed:', e));
+  })().catch((e) => {
+    console.error('[fathom] flame init failed:', e);
+    if (!destroyed) callbacks.onError?.(`WebGPU init failed — ${e instanceof Error ? e.message : String(e)}`);
+  });
 
   return {
     destroy() {

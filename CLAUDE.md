@@ -24,7 +24,7 @@ v1 build (M0–M4 done; see `SPEC.md`):
 ## Layout
 | Path | Role |
 |---|---|
-| `app/` | **cinema** — Vite + React + TS; raw-WebGPU core `app/src/gpu/` (incl. `motion.ts` = pick math mirroring `shaders/river-sim.wgsl` M2/M4 · `bloom.ts` = HDR bloom chain M4), SSE client `app/src/lib/stream.ts`, shell `app/src/ui/` (incl. `SpanDetail.tsx`) |
+| `app/` | **cinema** — Vite + React + TS; raw-WebGPU core `app/src/gpu/` (incl. `motion.ts` = pick math mirroring `shaders/river-sim.wgsl` M2/M4 · `bloom.ts` = HDR bloom chain M4), SSE client `app/src/lib/stream.ts`, shell `app/src/ui/` (incl. `SpanDetail.tsx` · `LiveNotice.tsx` M5); `app/public/` = replay data + `og.png`/`favicon.svg` unfurl assets (M5) |
 | `app/public/traces.json` · `.sample.json` | trace data the app fetches in replay mode (copy of the root files) |
 | `server/` | **live server** (M1/M2) — OTLP receiver + SSE + `/traces/:id` (`src/otlp.ts`, `src/hub.ts`, `src/index.ts`); `tools/` = emit/live-demo/sentinel-otlp/pick-e2e checks; `e2e.ts` |
 | `app/tools/pick-check.ts` | M2 pick-math unit harness (mirrors the shader; no GPU) |
@@ -133,15 +133,24 @@ GPU/frame with bloom on** — 157× under the 16.7 ms budget on the 4070 (`PROOF
 `app/m4-richness.png`, also the README hero). Curl samples global time → replay loops drift subtly within
 ±0.02 NDC (documented caveat); the curl amplitude budget (jitter 0.03 + turb 0.035 + curl 0.015 = 0.080
 < 0.09 lane gap) is load-bearing — don't raise it without redoing the arithmetic (pick-check enforces).
-**M5 in progress (hosted demo — Opus half done)**: the static replay demo is deployed to **GitHub Pages**
-via CI — `.github/workflows/deploy.yml` builds `app/dist` and publishes on every push to `main`
-(`ci.yml` gates PRs). The demo runs `?source=real` — the **labeled client-side replay**, no server (live
-SSE mode is deferred). Vite `base` is now **`'./'`** (relative) so the bundle works under the Pages subpath
-*and* at local root (the recorder serves `dist` at root). The **README hero is now an animated GIF**
-(`app/fathom-demo.gif`, tracked) captured by `app/record.mjs` on the 4070 (real capture, replayed — the HUD
-says so); `webm`/`mp4` are gitignored (regenerable; mp4 uploaded at launch). GIF is ~30fps for size; the
-demo *runs* at 60fps. One-time manual step: repo **Settings → Pages → Source = GitHub Actions**. URL:
-`https://manvendra-github.github.io/Fathom/`. Still missing (M5, Fable half): README hero copy + public-demo
-visual polish + launch (X/HN). Deferred: hosting the Node OTLP+SSE server for public `?source=live`.
-**The v1 build plan is in [`SPEC.md`](./SPEC.md)** (milestones M0–M5). **Next: finish M5 (Fable polish + launch).**
+**M5 nearly done (hosted demo — both halves shipped; launch pending)**: the static replay demo is deployed
+to **GitHub Pages** via CI — `.github/workflows/deploy.yml` builds `app/dist` and publishes on every push to
+`main` (`ci.yml` gates PRs). The demo runs `?source=real` — the **labeled client-side replay**, no server
+(live SSE mode is deferred). Vite `base` is **`'./'`** (relative) so the bundle works under the Pages subpath
+*and* at local root (the recorder serves `dist` at root). URL: `https://manvendra-github.github.io/Fathom/`.
+**Opus half**: deploy/CI + the recorder (`app/record.mjs` → `app/fathom-demo.gif`, tracked README hero;
+`webm`/`mp4` gitignored, mp4 uploaded at launch; gif recipe = 16fps·760px·128 colors·8s, shipped in the
+recorder — the gif is ~16fps for size, the demo *runs* at 60fps). **Fable half (launch surface)**: README
+rebuilt to SPEC §7's shape (hook → hero gif → demo link + the 0.106 ms/157× number → "why this exists" →
+substance; `m2-drill.png` + `m3-flame.png` now tracked and embedded); unfurl cards in `app/index.html`
+(`og:`/`twitter:` + `app/public/og.png` 1200×630 + `favicon.svg`); **init errors surface on-screen** —
+`onError` threaded through `createRiver`/`createFlame` (adapter-null was a silent blank canvas; shared copy
+in `gpu/capabilities.ts` `NO_ADAPTER_MSG`); **live mode with no gateway** shows an honest "no gateway
+connected" notice after 4s (`ui/LiveNotice.tsx`; self-dismisses on connect, one-click switch to replay);
+river legend hints `click a comet → its span`; humane replay-fetch errors; **minimal mobile pass**
+(≤720px compact panels + flame-owns-the-top via `.flame ~ #hud`, ≤480px hides the legend). Verified:
+pick-check 21/21 · cost-check 50/50 · pick-e2e 8/8 · 4-state screenshot iteration on the 4070
+(`PROOF.md` §8c). Still missing (M5): **launch** (X first, then HN 12–17 UTC — plan in `SPEC.md` §7).
+Deferred: hosting the Node OTLP+SSE server for public `?source=live`.
+**The v1 build plan is in [`SPEC.md`](./SPEC.md)** (milestones M0–M5). **Next: launch.**
 Decision context: vault note `next-flagship-project-research.md`.

@@ -232,9 +232,18 @@ only `?source=live` needs the Node OTLP+SSE server (deferred).
   base has no routing downside.
 - **Demo clip.** `app/record.mjs` records the running `app/dist` on the real GPU (serve dist → `channel:'chrome'`
   + `--force_high_performance_gpu` → wait `[fathom]` ready → `?source=real` → `recordVideo`), then ffmpeg emits
-  `.mp4` + a two-pass-palette `.gif`. The GIF (`app/fathom-demo.gif`, ~30fps for size) is the README hero and is
-  git-tracked; `webm`/`mp4` are gitignored (regenerable; the mp4 is uploaded directly at launch). Honesty: the
+  `.mp4` + a two-pass-palette `.gif` (16fps · 760px · 128 colors · 8s ≈ 6 MB — dense particle motion is
+  worst-case for gif; the mp4/webm carry full framerate). The GIF (`app/fathom-demo.gif`) is the README hero and
+  is git-tracked; `webm`/`mp4` are gitignored (regenerable; the mp4 is uploaded directly at launch). Honesty: the
   clip is a real capture, replayed — the HUD's "requests replayed" / "replayed as a live stream" says so.
+- **Launch surface (M5 Fable pass).** `index.html` carries the unfurl cards (`og:`/`twitter:` +
+  `public/og.png` 1200×630 + `public/favicon.svg`). First-visit failure modes are surfaced, not silent:
+  `createRiver`/`createFlame` accept `onError` (adapter-null → the shared `NO_ADAPTER_MSG` from
+  `gpu/capabilities.ts`; init throws → message) rendered in App's full-screen error state; live mode with no
+  gateway answering shows `ui/LiveNotice.tsx` after 4s (honest "no gateway connected" + how to run one +
+  one-click switch to replay — it self-dismisses if a local server connects). The river legend hints the M2
+  pick (`click a comet → its span`). A minimal mobile pass lives at the end of `styles.css` (≤720px compact
+  panels; in flame view the flame panel owns the top via `.flame ~ #hud`; ≤480px hides the legend).
 - **Deferred (live mode).** Hosting the Node server for public `?source=live` needs a live process (Fly.io/Render;
   Cloudflare Pages is static-only, a Worker+Durable Object is the advanced alt). Not required for the launch demo.
 
