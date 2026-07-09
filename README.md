@@ -135,4 +135,4 @@ develop the renderer.
 - ffmpeg isn't required; without it you get `.webm` (plays everywhere). With it, `record.mjs` also emits `.mp4` + `.gif`.
 
 ## Requirements
-node ≥ 20 · python 3 (for `npm run serve`) · a WebGPU-capable Chrome/Edge. See [`CLAUDE.md`](./CLAUDE.md).
+node ≥ 20 · python 3 (for `npm run serve:spike`) · a WebGPU-capable Chrome/Edge. See [`CLAUDE.md`](./CLAUDE.md).
