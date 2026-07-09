@@ -131,7 +131,7 @@ to the trailing window; (4) leaked snapshot timers on unmount → removed. All p
 ## 5. M2 — drill-down (click a comet → its real span, verified against `/traces/:id`)
 
 Clicking a comet resolves it to the correct span and shows that span's **real attributes**. The pick is
-pure CPU math (`app/src/gpu/motion.ts`) that mirrors the shader's closed-form motion (`shaders/river.wgsl`)
+pure CPU math (`app/src/gpu/motion.ts`) that mirrors the shader's closed-form motion (`shaders/river-sim.wgsl`; M4 moved the motion authority here from `river.wgsl`, which is now the draw shader)
 and inverts a screen click back to the nearest comet head; the server now retains each span's raw
 attributes and serves them at `GET /traces/:id` (the SSE stream stays lean — attributes are fetched on
 demand, not streamed).

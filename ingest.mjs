@@ -33,7 +33,7 @@ const events = sorted.map((r) => {
     cacheHit: r.cacheHit === true,
     fallbackUsed: r.fallbackUsed === true,
     guardrail: r.guardrailStatus || null,        // 'pass' | 'flag' | 'block'
-    pii: piiCategories.length > 0,
+    pii: piiCategories.length > 0 || r.guardrailStatus === 'block',  // match server mappers (otlp.ts/poller.ts)
     piiCategories,
   };
 });
