@@ -17,10 +17,18 @@ import { startPoller } from './poller';
 const PORT = Number(process.env.PORT ?? 4319);
 const hub = new Hub(Number(process.env.BUFFER ?? 2000));
 
+const MAX_BODY = 8 * 1024 * 1024; // 8 MB cap on the OTLP POST body — the only network-facing write path
+class BodyTooLarge extends Error {}
+
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let b = '';
-    req.on('data', (c) => (b += c));
+    let size = 0;
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > MAX_BODY) { req.destroy(); reject(new BodyTooLarge('request body too large')); return; }
+      b += c;
+    });
     req.on('end', () => resolve(b));
     req.on('error', reject);
   });
@@ -47,7 +55,7 @@ const server = createServer(async (req, res) => {
       res.end('{}');
       if (events.length) console.log(`[otlp] +${events.length} span(s)  buffer=${hub.size} clients=${hub.clientCount}`);
     } catch (e) {
-      res.writeHead(400, { 'content-type': 'application/json' });
+      res.writeHead(e instanceof BodyTooLarge ? 413 : 400, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: String(e) }));
     }
     return;
