@@ -10,7 +10,11 @@ export type Guardrail = 'pass' | 'flag' | 'block' | null;
 export interface TraceEvent {
   /** stable id (span id) — optional until the OTLP/poller path fills it (M1/M2 drill-down). */
   id?: string;
-  /** ms from the first event in the trace. */
+  /**
+   * File/replay path: ms from the first event in the trace (`ingest.mjs` relativizes to t0).
+   * Live server path (OTLP/poller): absolute epoch ms — there is no single trace t0 in a
+   * streaming ring buffer; live consumers position comets by arrival time, not `t`.
+   */
   t: number;
   model: string | null;
   provider: string | null;
